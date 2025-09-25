@@ -67,7 +67,8 @@ export default function AddQR() {
     await SecureStore.setItemAsync(storageKey, JSON.stringify(authData));
     
     // Redirect back to home page
-    router.push('/');
+    router.dismissAll();
+    router.replace('/');
   }
 
   return (

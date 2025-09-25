@@ -27,6 +27,8 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
       ],
       "package": "com.narralabs.authfactory"
@@ -70,6 +72,12 @@
         "projectId": "dd8c64ee-d9c5-4b43-b525-992d3bcf621c"
       }
     },
-    "owner": "mthree.japzon"
+    "owner": "mthree.japzon",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/dd8c64ee-d9c5-4b43-b525-992d3bcf621c"
+    }
   }
 }

@@ -30,7 +30,8 @@ export default function AddCode() {
     saveDataToStorage({ name, value: OTPAuth.URI.stringify(otp) });
     
     // Redirect back to home page
-    router.push('/');
+    router.dismissAll();
+    router.replace('/');
   }
 
   async function saveDataToStorage(authData: { name: string; value: string }) {
