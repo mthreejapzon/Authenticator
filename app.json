@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Authenticator",
-    "slug": "Authenticator",
+    "name": "AuthFactory",
+    "slug": "AuthFactory",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/authicon.png",
-    "scheme": "authenticator",
+    "scheme": "authfactory",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "platforms": [
@@ -26,8 +26,6 @@
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
       ],
