@@ -28,6 +28,23 @@ export default function Index() {
     });
   }, [accountKeys]);
 
+  const deleteAccount = async (key: string) => {
+  try {
+    // Remove from SecureStore
+    await SecureStore.deleteItemAsync(key);
+
+    // Update keys in SecureStore
+    const updatedKeys = accountKeys.filter((k) => k !== key);
+    await SecureStore.setItemAsync('userAccountKeys', JSON.stringify(updatedKeys));
+
+    // Update local state
+    setAccountKeys(updatedKeys);
+    setAccounts(accounts.filter((acc) => acc.key !== key));
+  } catch (err) {
+    console.error("Error deleting account:", err);
+  }
+};
+
   return (
     <View
       style={{
@@ -51,7 +68,7 @@ export default function Index() {
 
       {/* Accounts */}
       {accounts.length ? (
-        <AccountList accounts={accounts} />
+        <AccountList accounts={accounts} onDelete={deleteAccount} />
       ) : (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
           <Text style={{ fontSize: 16, color: "#666" }}>No accounts yet</Text>
