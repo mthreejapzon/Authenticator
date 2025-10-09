@@ -8,6 +8,7 @@ export default function Index() {
   const [accountKeys, setAccountKeys] = useState<string[]>([]);
   const [accounts, setAccounts] = useState<{ key: string; data: { name: string; value: string } | null }[]>([]);
 
+  // Load stored account keys
   useEffect(() => {
     SecureStore.getItemAsync('userAccountKeys').then((storedKeys) => {
       const keys = storedKeys ? JSON.parse(storedKeys) : [];
@@ -15,8 +16,12 @@ export default function Index() {
     });
   }, []);
 
+  // Load account details
   useEffect(() => {
-    if (!accountKeys.length) return;
+    if (!accountKeys.length) {
+      setAccounts([]);
+      return;
+    }
 
     const userAccounts = accountKeys.map(async (key) => {
       const accountData = await SecureStore.getItemAsync(key);
@@ -28,22 +33,42 @@ export default function Index() {
     });
   }, [accountKeys]);
 
+  // Delete account
   const deleteAccount = async (key: string) => {
-  try {
-    // Remove from SecureStore
-    await SecureStore.deleteItemAsync(key);
+    try {
+      await SecureStore.deleteItemAsync(key);
 
-    // Update keys in SecureStore
-    const updatedKeys = accountKeys.filter((k) => k !== key);
-    await SecureStore.setItemAsync('userAccountKeys', JSON.stringify(updatedKeys));
+      const updatedKeys = accountKeys.filter((k) => k !== key);
+      await SecureStore.setItemAsync('userAccountKeys', JSON.stringify(updatedKeys));
 
-    // Update local state
-    setAccountKeys(updatedKeys);
-    setAccounts(accounts.filter((acc) => acc.key !== key));
-  } catch (err) {
-    console.error("Error deleting account:", err);
-  }
-};
+      setAccountKeys(updatedKeys);
+      setAccounts((prev) => prev.filter((acc) => acc.key !== key));
+    } catch (err) {
+      console.error("Error deleting account:", err);
+    }
+  };
+
+  // Edit account name
+  const editAccount = async (key: string, newName: string) => {
+    try {
+      const storedData = await SecureStore.getItemAsync(key);
+      if (!storedData) return;
+
+      const parsed = JSON.parse(storedData);
+      const updated = { ...parsed, name: newName };
+
+      await SecureStore.setItemAsync(key, JSON.stringify(updated));
+
+      // Update local state
+      setAccounts((prev) =>
+        prev.map((acc) =>
+          acc.key === key ? { ...acc, data: updated } : acc
+        )
+      );
+    } catch (err) {
+      console.error("Error editing account:", err);
+    }
+  };
 
   return (
     <View
@@ -66,9 +91,13 @@ export default function Index() {
         My 2FA Codes
       </Text>
 
-      {/* Accounts */}
+      {/* Accounts List */}
       {accounts.length ? (
-        <AccountList accounts={accounts} onDelete={deleteAccount} />
+        <AccountList
+          accounts={accounts}
+          onDelete={deleteAccount}
+          onEdit={editAccount}
+        />
       ) : (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
           <Text style={{ fontSize: 16, color: "#666" }}>No accounts yet</Text>

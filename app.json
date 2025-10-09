@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "AuthFactory",
-    "slug": "AuthFactory",
+    "slug": "Authenticator",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/authicon.png",
