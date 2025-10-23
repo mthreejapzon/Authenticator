@@ -6,7 +6,15 @@ export default function AccountList({
   onDelete,
   onEdit,
 }: {
-  accounts: { key: string; data: { name: string; value: string } | null }[];
+  accounts: { 
+    key: string; 
+    data: { 
+      accountName: string; 
+      username: string; 
+      password: string; 
+      value: string 
+    } | null 
+  }[];
   onDelete: (key: string) => void;
   onEdit: (key: string, newName: string) => void;
 }) {

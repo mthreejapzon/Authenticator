@@ -1,180 +1,111 @@
-import { BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
-import { useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
-import * as OTPAuth from 'otpauth';
-import { useState } from 'react';
-import { Button, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Camera, CameraView } from "expo-camera";
+import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useForm } from "./context/FormContext";
 
 export default function AddQR() {
   const router = useRouter();
-  const [permission, requestPermission] = useCameraPermissions();
-  const [qrCode, setQrCode] = useState<string | null>(null);
-  const [name, setName] = useState<string | null>(null);
+  const { setFormData, resetForm } = useForm();
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
-  if (!permission) {
-    // Camera permissions are still loading.
-    return <View />;
-  }
+  // ✅ useRef instead of useState for instant, synchronous updates
+  const hasScannedRef = useRef(false);
 
-  if (!permission.granted) {
-    // Camera permissions are not granted yet.
+  useEffect(() => {
+    (async () => {
+      const { status } = await Camera.requestCameraPermissionsAsync();
+      setHasPermission(status === "granted");
+    })();
+  }, []);
+
+  const handleBarCodeScanned = async ({ data }: { data: string }) => {
+    // ✅ Prevent multiple triggers immediately
+    if (hasScannedRef.current) return;
+    hasScannedRef.current = true;
+
+    try {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      // ✅ Extract secret key
+      const match = data.match(/secret=([^&]+)/);
+      const secret = match ? match[1] : "";
+      if (!secret) throw new Error("Invalid QR format");
+
+      setFormData({ secretKey: secret });
+
+      // ✅ Show alert once, then go back to setup
+      Alert.alert("QR Scanned", "Secret key added successfully.", [
+        {
+          text: "OK",
+          onPress: () => {
+            router.replace("/setup");
+          },
+        },
+      ]);
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Error", "Failed to scan QR code.", [
+        { text: "OK", onPress: () => router.replace("/setup") },
+      ]);
+    }
+  };
+
+  if (hasPermission === null) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.message}>We need your permission to show the camera</Text>
-        <Button onPress={requestPermission} title="grant permission" />
+      <View style={styles.center}>
+        <Text>Requesting camera permission...</Text>
       </View>
     );
   }
 
-  function saveQrCode(result: BarcodeScanningResult) {
-    if (qrCode) return;
-
-    setQrCode(result.data);
-
-    try {
-      // Validate QR code
-      OTPAuth.URI.parse(result.data);
-    } catch (e) {
-      alert('Invalid QR code');
-      router.push('/setup');
-    }
-  }
-
-  async function saveDataAndRedirect() {
-    if (!qrCode || !name) return;
-
-    const storageKey = Math.random().toString(36).substring(2);
-    const authData = { name, value: qrCode };
-
-    // We're saving two things:
-    // 1. A list of all user account keys (so we can show them on the home screen)
-    // 2. The actual auth data, stored using a unique key
-    //
-    // 
-    // userAccountKeys: ["asdf1234", "qwer4567"]
-    // asdf1234: { name: "My Account", data: "otpauth://totp/..." }
-    // qwer4567: { name: "Another Account", data: "otpauth://totp/..." }
-    
-    // Store the new key in an array of user account keys
-    await SecureStore.getItemAsync('userAccountKeys').then(async(storedKeys) => {
-      const updatedKeys = storedKeys ? JSON.parse(storedKeys) : [];
-      updatedKeys.push(storageKey);
-
-      await SecureStore.setItemAsync('userAccountKeys', JSON.stringify(updatedKeys));
-    });
-    
-    // Store the actual auth data using the generated key
-    await SecureStore.setItemAsync(storageKey, JSON.stringify(authData));
-    
-    // Redirect back to home page
-    router.dismissAll();
-    router.replace('/');
+  if (hasPermission === false) {
+    return (
+      <View style={styles.center}>
+        <Text>No access to camera</Text>
+      </View>
+    );
   }
 
   return (
-    <View style={styles.container}>
-      {qrCode ? (
-        <>
-          <Text
-            style={{ 
-              marginBottom: 5, 
-              marginLeft: 12, 
-              marginRight: 12,
-            }}
-          >
-            Account Name
-          </Text>
-
-          <TextInput
-            placeholder="Enter a name for this QR"
-            placeholderTextColor={"gray"}
-            onChangeText={(input) => setName(input)}
-            style={{
-              height: 40,
-              borderColor: 'gray',
-              borderWidth: 1,
-              marginLeft: 12,
-              marginRight: 12,
-              padding: 10,
-              backgroundColor: 'white',
-              borderRadius: 8,
-            }}
-          />
-          <View 
-            style={{
-              marginTop: 10,
-              alignItems: 'center',
-              paddingLeft: 12,
-              paddingRight: 12,
-            }}
-          >
-          </View>
-          <View 
-            style={{ 
-              marginTop: 20,
-              alignItems: 'center',
-              position: 'absolute',
-              bottom: 30,
-              left: 13,
-              right: 13,
-            }}
-          >
-            <TouchableOpacity
-                onPress={saveDataAndRedirect}
-                style={{
-                  backgroundColor: '#007AFF',
-                  paddingVertical: 12,
-                  paddingHorizontal: 32,
-                  borderRadius: 8,
-                  width: '100%',
-                  alignItems: 'center',
-                }}
-              >
-                <Text 
-                  style={{
-                    color: 'white',
-                    fontWeight: 'bold',
-                    fontSize: 16,
-                  }}
-                >
-                  Submit
-                </Text>
-              </TouchableOpacity>
-            </View>
-        </>
-      ) : (
-        <CameraView 
-          style={styles.camera} 
-          facing="back"
-          barcodeScannerSettings={{
-            barcodeTypes: ['qr']
-          }}
-          onBarcodeScanned={saveQrCode}
-        />
+    <View style={{ flex: 1 }}>
+      {/* ✅ Camera only renders when not scanned */}
+      {!hasScannedRef.current && (
+        <CameraView onBarcodeScanned={handleBarCodeScanned} style={{ flex: 1 }} />
       )}
+
+      {/* Cancel button */}
+      <TouchableOpacity
+        style={styles.cancelButton}
+        onPress={() => {
+          resetForm();
+          router.replace("/setup");
+        }}
+      >
+        <Text style={styles.cancelText}>Cancel</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  center: {
     flex: 1,
-    paddingTop: 25,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  message: {
-    textAlign: 'center',
-    paddingBottom: 10,
+  cancelButton: {
+    position: "absolute",
+    bottom: 40,
+    alignSelf: "center",
+    backgroundColor: "#00000088",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
-  camera: {
-    flex: 1,
-  },
-  button: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  text: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
+  cancelText: {
+    color: "white",
+    fontWeight: "600",
   },
 });

@@ -1,5 +1,5 @@
-import * as OTPAuth from 'otpauth';
-import { useRef, useState } from 'react';
+import { useRouter } from "expo-router";
+import { useRef, useState } from "react";
 import {
   Alert,
   Modal,
@@ -7,15 +7,14 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-} from 'react-native';
-import { CountdownCircleTimer } from 'react-native-countdown-circle-timer';
-import Swipeable from 'react-native-gesture-handler/Swipeable';
-import Svg, { Path } from 'react-native-svg';
-import * as icons from 'simple-icons';
+} from "react-native";
+import Swipeable from "react-native-gesture-handler/Swipeable";
+import Svg, { Path } from "react-native-svg";
+import * as icons from "simple-icons";
 
 function getProviderIcon(providerName: string) {
   if (!providerName) return null;
-  const formatted = providerName.toLowerCase().replace(/\s+/g, '');
+  const formatted = providerName.toLowerCase().replace(/\s+/g, "");
   const iconKey = `si${formatted.charAt(0).toUpperCase()}${formatted.slice(1)}`;
   return (icons as any)[iconKey] || null;
 }
@@ -25,182 +24,202 @@ export default function AccountListItem({
   onDelete,
   onEdit,
 }: {
-  account: { key: string; data: { name: string; value: string } | null };
+  account: {
+    key: string;
+    data: {
+      accountName: string;
+      username: string;
+      password: string;
+      value: string;
+    } | null;
+  };
   onDelete: (key: string) => void;
   onEdit: (key: string, newName: string) => void;
 }) {
-  if (!account.data?.value) return <></>;
-
-  const otp = OTPAuth.URI.parse(account.data?.value);
-  const period = otp instanceof OTPAuth.TOTP ? otp.period : 30;
-  const initialRemainingTime =
-    otp instanceof OTPAuth.TOTP ? otp.remaining() / 1000 : 0;
-  const timerKey = Math.floor(Date.now() / 1000 / period);
-
-  const [token, setToken] = useState(otp.generate());
-  const [isEditing, setIsEditing] = useState(false);
-  const [newName, setNewName] = useState(account.data?.name || '');
+  const router = useRouter();
   const swipeableRef = useRef<Swipeable>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [newName, setNewName] = useState(account.data?.accountName || "");
 
-  const timerComplete = () => {
-    setToken(otp.generate());
-    return { shouldRepeat: true, delay: 0 };
-  };
+  if (!account.data) return null;
+
+  const providerName = account.data.accountName || "";
+  const providerIcon = getProviderIcon(providerName);
 
   // Delete confirmation
   const confirmDelete = () => {
     Alert.alert(
-      'Delete Account',
-      `Are you sure you want to delete "${account.data?.name}"?`,
+      "Delete Account",
+      `Are you sure you want to delete "${providerName}"?`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: "Cancel", style: "cancel" },
         {
-          text: 'Delete',
-          style: 'destructive',
+          text: "Delete",
+          style: "destructive",
           onPress: () => onDelete(account.key),
         },
       ]
     );
   };
 
-  // Edit name confirmation modal
+  // Save edit
   const saveEdit = () => {
     if (!newName.trim()) return;
     onEdit(account.key, newName.trim());
+    setNewName(newName.trim());
     setIsEditing(false);
-    swipeableRef.current?.close(); // close swipe automatically
+    swipeableRef.current?.close();
   };
 
-  // Right swipe action buttons
+  // Swipeable actions
   const renderRightActions = () => (
     <View
       style={{
-        flexDirection: 'row',
+        flexDirection: "row",
         marginVertical: 12,
         borderRadius: 12,
-        overflow: 'hidden',
+        overflow: "hidden",
       }}
     >
       <TouchableOpacity
-        onPress={() => setIsEditing(true)}
+        onPress={() => {
+          setNewName(providerName);
+          setIsEditing(true);
+        }}
         style={{
-          backgroundColor: '#007AFF',
-          justifyContent: 'center',
-          alignItems: 'center',
+          backgroundColor: "#007AFF",
+          justifyContent: "center",
+          alignItems: "center",
           width: 80,
         }}
       >
-        <Text style={{ color: 'white', fontWeight: '600' }}>Edit</Text>
+        <Text style={{ color: "white", fontWeight: "600" }}>Edit</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
         onPress={confirmDelete}
         style={{
-          backgroundColor: '#FF3B30',
-          justifyContent: 'center',
-          alignItems: 'center',
+          backgroundColor: "#FF3B30",
+          justifyContent: "center",
+          alignItems: "center",
           width: 80,
         }}
       >
-        <Text style={{ color: 'white', fontWeight: '600' }}>Delete</Text>
+        <Text style={{ color: "white", fontWeight: "600" }}>Delete</Text>
       </TouchableOpacity>
     </View>
   );
 
-  const providerIcon = getProviderIcon(account.data?.name || '');
+  // Generate fallback initials if no icon
+  const initials = providerName
+    ? providerName
+        .replace(/[^A-Za-z0-9]/g, "")
+        .slice(0, 2)
+        .toUpperCase()
+    : "??";
 
   return (
     <>
       <Swipeable ref={swipeableRef} renderRightActions={renderRightActions}>
-        <View
-          style={{
-            backgroundColor: '#fff',
-            padding: 16,
-            borderRadius: 12,
-            marginBottom: 12,
-            shadowColor: '#000',
-            shadowOpacity: 0.05,
-            shadowRadius: 5,
-            shadowOffset: { width: 0, height: 2 },
-            elevation: 3,
-          }}
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() =>
+            router.push({
+              pathname: "/details/[key]",
+              params: {
+                key: account.key,
+                accountName: providerName,
+                username: account.data?.username || "N/A",
+                password: account.data?.password || "",
+                value: account.data?.value || "",
+              },
+            })
+          }
         >
-          {/* Provider Icon + Name */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-            {providerIcon ? (
-              <Svg
-                width={28}
-                height={28}
-                viewBox="0 0 24 24"
-                style={{ marginRight: 8 }}
-              >
-                <Path fill={`#${providerIcon.hex}`} d={providerIcon.path} />
-              </Svg>
-            ) : (
-              <View
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 6,
-                  backgroundColor: '#e0e0e0',
-                  marginRight: 8,
-                }}
-              />
-            )}
-
-            <Text
-              style={{
-                fontSize: 18,
-                fontWeight: '600',
-                color: '#333',
-                flexShrink: 1,
-              }}
-            >
-              {account.data?.name}
-            </Text>
-          </View>
-
-          {/* Token + Timer */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-            <Text
-              style={{
-                fontSize: 32,
-                fontWeight: 'bold',
-                color: '#007AFF',
-                letterSpacing: 4,
-                flex: 1,
-              }}
-            >
-              {token}
-            </Text>
-
-            <CountdownCircleTimer
-              key={timerKey}
-              isPlaying
-              duration={period}
-              initialRemainingTime={initialRemainingTime}
-              colors={['#2b6db3', '#ffbb01', '#ff0101']}
-              colorsTime={[period, period * 0.2, 0]}
-              trailColor="#ffffffff"
-              strokeWidth={6}
-              size={48}
-              rotation="clockwise"
-              onComplete={timerComplete}
-            >
-              {({ remainingTime }) => (
-                <Text
+          <View
+            style={{
+              backgroundColor: "#fff",
+              padding: 16,
+              borderRadius: 12,
+              marginBottom: 12,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              shadowColor: "#000",
+              shadowOpacity: 0.05,
+              shadowRadius: 5,
+              shadowOffset: { width: 0, height: 2 },
+              elevation: 3,
+            }}
+          >
+            {/* Left section: icon or initials + name */}
+            <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+              {providerIcon ? (
+                <Svg
+                  width={28}
+                  height={28}
+                  viewBox="0 0 24 24"
+                  style={{ marginRight: 12 }}
+                >
+                  <Path fill={`#${providerIcon.hex}`} d={providerIcon.path} />
+                </Svg>
+              ) : (
+                <View
                   style={{
-                    fontSize: 14,
-                    color: remainingTime <= 5 ? '#FF3B30' : '#666',
-                    fontWeight: '500',
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    backgroundColor: "#e0e0e0",
+                    marginRight: 12,
+                    justifyContent: "center",
+                    alignItems: "center",
                   }}
                 >
-                  {remainingTime}
-                </Text>
+                  <Text
+                    style={{
+                      color: "#555",
+                      fontWeight: "700",
+                      fontSize: 14,
+                    }}
+                  >
+                    {initials}
+                  </Text>
+                </View>
               )}
-            </CountdownCircleTimer>
+
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    fontSize: 18,
+                    fontWeight: "600",
+                    color: "#333",
+                    flexShrink: 1,
+                  }}
+                >
+                  {providerName}
+                </Text>
+
+                {account.data?.username && (
+                  <Text style={{ color: "#999" }}>
+                    {account.data.username}
+                  </Text>
+                )}
+              </View>
+            </View>
+
+            {/* Right arrow */}
+            <Text
+              style={{
+                fontSize: 22,
+                color: "#999",
+                marginLeft: 8,
+                fontWeight: "300",
+              }}
+            >
+              ›
+            </Text>
           </View>
-        </View>
+        </TouchableOpacity>
       </Swipeable>
 
       {/* Edit Modal */}
@@ -208,29 +227,29 @@ export default function AccountListItem({
         <View
           style={{
             flex: 1,
-            justifyContent: 'center',
-            alignItems: 'center',
-            backgroundColor: 'rgba(0,0,0,0.4)',
+            justifyContent: "center",
+            alignItems: "center",
+            backgroundColor: "rgba(0,0,0,0.4)",
           }}
         >
           <View
             style={{
-              backgroundColor: '#fff',
+              backgroundColor: "#fff",
               padding: 20,
               borderRadius: 12,
-              width: '80%',
+              width: "80%",
             }}
           >
-            <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 12 }}>
+            <Text style={{ fontSize: 18, fontWeight: "600", marginBottom: 12 }}>
               Edit Account Name
             </Text>
             <TextInput
               value={newName}
               onChangeText={setNewName}
-              placeholder="Enter new name"
+              placeholder="Enter new account name"
               style={{
                 borderWidth: 1,
-                borderColor: '#ccc',
+                borderColor: "#ccc",
                 borderRadius: 8,
                 padding: 10,
                 marginBottom: 16,
@@ -238,16 +257,16 @@ export default function AccountListItem({
             />
             <View
               style={{
-                flexDirection: 'row',
-                justifyContent: 'flex-end',
+                flexDirection: "row",
+                justifyContent: "flex-end",
                 gap: 12,
               }}
             >
               <TouchableOpacity onPress={() => setIsEditing(false)}>
-                <Text style={{ color: '#666', fontSize: 16 }}>Cancel</Text>
+                <Text style={{ color: "#666", fontSize: 16 }}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={saveEdit}>
-                <Text style={{ color: '#007AFF', fontSize: 16 }}>Save</Text>
+                <Text style={{ color: "#007AFF", fontSize: 16 }}>Save</Text>
               </TouchableOpacity>
             </View>
           </View>
