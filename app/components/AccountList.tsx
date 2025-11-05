@@ -25,7 +25,6 @@ export default function AccountList({
         <AccountListItem
           account={item}
           onDelete={onDelete}
-          onEdit={onEdit}
         />
       )}
       keyExtractor={(item) => item.key}

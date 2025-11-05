@@ -40,14 +40,14 @@ export default function AddQR() {
         {
           text: "OK",
           onPress: () => {
-            router.replace("/setup");
+            router.back();
           },
         },
       ]);
     } catch (error) {
       console.error(error);
       Alert.alert("Error", "Failed to scan QR code.", [
-        { text: "OK", onPress: () => router.replace("/setup") },
+        { text: "OK", onPress: () => router.back() },
       ]);
     }
   };

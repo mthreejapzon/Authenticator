@@ -8,25 +8,42 @@ import {
   Easing,
   ScrollView,
   Text,
+  TextInput,
   TouchableOpacity,
   View
 } from "react-native";
+import Svg, { Path } from "react-native-svg";
+import * as icons from "simple-icons";
+import AccountForm from "../components/AccountForm";
+import { useForm } from "../context/FormContext";
 
 export default function DetailsScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const { key } = useLocalSearchParams();
+  const {
+    accountName,
+    username,
+    password,
+    secretKey,
+    notes,
+    setFormData,
+    resetForm,
+  } = useForm();
 
   const [data, setData] = useState<{
     accountName: string;
     username: string;
     password: string;
+    secretKey: string;
     value: string;
   } | null>(null);
 
+  const [isEditing, setIsEditing] = useState<boolean>(false);
   const [otpCode, setOtpCode] = useState<string>("Generating...");
   const [otpPeriod, setOtpPeriod] = useState<number>(30);
   const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [notesText, setNotesText] = useState<string>("");
 
   const progress = useRef(new Animated.Value(1)).current;
   const highlightAnim = useRef(new Animated.Value(0)).current;
@@ -72,6 +89,8 @@ export default function DetailsScreen() {
 
       const parsed = JSON.parse(storedData);
       setData(parsed);
+      setFormData(parsed);
+      setNotesText(parsed.notes || "");
 
       if (!parsed.value) return;
 
@@ -115,6 +134,28 @@ export default function DetailsScreen() {
     })();
   }, [key]);
 
+  // Header: Edit / Cancel
+  useEffect(() => {
+    navigation.setOptions({
+      headerTitle: data?.accountName || "Account Details",
+      headerRight: () => (
+        !isEditing ? (
+          <TouchableOpacity onPress={() => setIsEditing(true)} activeOpacity={0.8}>
+            <View style={{ backgroundColor: "#007AFF", paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 }}>
+              <Text style={{ color: "#fff", fontWeight: "600" }}>Edit</Text>
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity onPress={() => setIsEditing(false)} activeOpacity={0.8}>
+            <View style={{ backgroundColor: "#f2f2f2", paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 }}>
+              <Text style={{ color: "#333", fontWeight: "600" }}>Cancel</Text>
+            </View>
+          </TouchableOpacity>
+        )
+      ),
+    });
+  }, [navigation, isEditing, data?.accountName]);
+
   const barWidth = progress.interpolate({
     inputRange: [0, 1],
     outputRange: ["0%", "100%"],
@@ -130,11 +171,106 @@ export default function DetailsScreen() {
       : "#f2f2f2";
   };
 
+  if (isEditing) {
+    return (
+      <AccountForm
+        accountKey={key as string}
+        accountName={accountName}
+        username={username}
+        password={password}
+        accountOtp={data?.value}
+        secretKey={secretKey}
+        notes={notes}
+        setFormData={setFormData}
+        resetForm={resetForm}
+      />
+    );
+  }
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: "#fff", padding: 20 }}
       contentContainerStyle={{ paddingBottom: 50 }}
     >
+      {/* Account Name */}
+      <Animated.View
+        style={{
+          backgroundColor: "#f9f9f9",
+          borderRadius: 12,
+          paddingVertical: 16,
+          paddingHorizontal: 14,
+          marginBottom: 20,
+          shadowColor: "#000",
+          shadowOpacity: 0.05,
+          shadowOffset: { width: 0, height: 1 },
+          shadowRadius: 4,
+          elevation: 1,
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          {(() => {
+            const providerName = data?.accountName || "";
+            const formatted = providerName.toLowerCase().replace(/\s+/g, "");
+            const iconKey = `si${formatted.charAt(0).toUpperCase()}${formatted.slice(1)}`;
+            const providerIcon: any = (icons as any)[iconKey] || null;
+
+            if (providerIcon) {
+              return (
+                <View
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 10,
+                    backgroundColor: `#${providerIcon.hex}`,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginRight: 14,
+                  }}
+                >
+                  <Svg width={26} height={26} viewBox="0 0 24 24">
+                    <Path fill="#fff" d={providerIcon.path} />
+                  </Svg>
+                </View>
+              );
+            }
+
+            const initials = providerName
+              ? providerName.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase()
+              : "??";
+            return (
+              <View
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 10,
+                  backgroundColor: "#e0e0e0",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginRight: 14,
+                }}
+              >
+                <Text style={{ color: "#555", fontWeight: "700", fontSize: 18 }}>
+                  {initials}
+                </Text>
+              </View>
+            );
+          })()}
+
+          <View style={{ flex: 1 }}>
+            <Text
+              style={{
+                fontSize: 20,
+                color: "#000",
+                fontWeight: "700",
+                letterSpacing: 0.3,
+              }}
+            >
+              {data?.accountName || "N/A"}
+            </Text>
+          </View>
+        </View>
+      </Animated.View>
+
       {/* Username */}
       <Text style={{ fontWeight: "600", fontSize: 15, color: "#333" }}>
         Username
@@ -294,6 +430,41 @@ export default function DetailsScreen() {
           </Text>
         </>
       )}
+
+      {/* Notes */}
+      <Text
+        style={{
+          fontWeight: "600",
+          fontSize: 15,
+          color: "#333",
+          marginTop: 24,
+        }}
+      >
+        Notes
+      </Text>
+      <Animated.View
+        style={{
+          backgroundColor: getBackgroundColor("notes"),
+          borderRadius: 8,
+          padding: 10,
+          marginTop: 4,
+        }}
+      >
+        <TextInput
+          value={notesText}
+          onChangeText={setNotesText}
+          placeholder="Add notes..."
+          placeholderTextColor="#999"
+          multiline
+          numberOfLines={4}
+          style={{
+            minHeight: 88,
+            textAlignVertical: "top",
+            color: "#000",
+            fontSize: 15,
+          }}
+        />
+      </Animated.View>
     </ScrollView>
   );
 }

@@ -1,29 +1,34 @@
 import React, { createContext, useContext, useState } from "react";
 
-type FormContextType = {
+export type FormFields = {
   accountName: string;
   username: string;
   password: string;
   secretKey: string;
-  setFormData: (data: Partial<FormContextType>) => void;
+  notes: string;
+};
+
+type FormContextType = FormFields & {
+  setFormData: (data: Partial<FormFields>) => void;
   resetForm: () => void;
 };
 
 const FormContext = createContext<FormContextType | undefined>(undefined);
 
 export const FormProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [formData, setFormDataState] = useState({
+  const [formData, setFormDataState] = useState<FormFields>({
     accountName: "",
     username: "",
     password: "",
     secretKey: "",
+    notes: "",
   });
 
-  const setFormData = (data: Partial<FormContextType>) =>
+  const setFormData = (data: Partial<FormFields>) =>
     setFormDataState((prev) => ({ ...prev, ...data }));
 
   const resetForm = () =>
-    setFormDataState({ accountName: "", username: "", password: "", secretKey: "" });
+    setFormDataState({ accountName: "", username: "", password: "", secretKey: "", notes: "" });
 
   return (
     <FormContext.Provider value={{ ...formData, setFormData, resetForm }}>

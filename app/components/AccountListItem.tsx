@@ -1,10 +1,8 @@
 import { useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import {
   Alert,
-  Modal,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -22,7 +20,6 @@ function getProviderIcon(providerName: string) {
 export default function AccountListItem({
   account,
   onDelete,
-  onEdit,
 }: {
   account: {
     key: string;
@@ -34,12 +31,9 @@ export default function AccountListItem({
     } | null;
   };
   onDelete: (key: string) => void;
-  onEdit: (key: string, newName: string) => void;
 }) {
   const router = useRouter();
   const swipeableRef = useRef<Swipeable>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [newName, setNewName] = useState(account.data?.accountName || "");
 
   if (!account.data) return null;
 
@@ -62,15 +56,6 @@ export default function AccountListItem({
     );
   };
 
-  // Save edit
-  const saveEdit = () => {
-    if (!newName.trim()) return;
-    onEdit(account.key, newName.trim());
-    setNewName(newName.trim());
-    setIsEditing(false);
-    swipeableRef.current?.close();
-  };
-
   // Swipeable actions
   const renderRightActions = () => (
     <View
@@ -81,21 +66,6 @@ export default function AccountListItem({
         overflow: "hidden",
       }}
     >
-      <TouchableOpacity
-        onPress={() => {
-          setNewName(providerName);
-          setIsEditing(true);
-        }}
-        style={{
-          backgroundColor: "#007AFF",
-          justifyContent: "center",
-          alignItems: "center",
-          width: 80,
-        }}
-      >
-        <Text style={{ color: "white", fontWeight: "600" }}>Edit</Text>
-      </TouchableOpacity>
-
       <TouchableOpacity
         onPress={confirmDelete}
         style={{
@@ -221,57 +191,6 @@ export default function AccountListItem({
           </View>
         </TouchableOpacity>
       </Swipeable>
-
-      {/* Edit Modal */}
-      <Modal visible={isEditing} transparent animationType="fade">
-        <View
-          style={{
-            flex: 1,
-            justifyContent: "center",
-            alignItems: "center",
-            backgroundColor: "rgba(0,0,0,0.4)",
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: "#fff",
-              padding: 20,
-              borderRadius: 12,
-              width: "80%",
-            }}
-          >
-            <Text style={{ fontSize: 18, fontWeight: "600", marginBottom: 12 }}>
-              Edit Account Name
-            </Text>
-            <TextInput
-              value={newName}
-              onChangeText={setNewName}
-              placeholder="Enter new account name"
-              style={{
-                borderWidth: 1,
-                borderColor: "#ccc",
-                borderRadius: 8,
-                padding: 10,
-                marginBottom: 16,
-              }}
-            />
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "flex-end",
-                gap: 12,
-              }}
-            >
-              <TouchableOpacity onPress={() => setIsEditing(false)}>
-                <Text style={{ color: "#666", fontSize: 16 }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={saveEdit}>
-                <Text style={{ color: "#007AFF", fontSize: 16 }}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </>
   );
 }
