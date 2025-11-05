@@ -1,10 +1,11 @@
 import * as Clipboard from "expo-clipboard";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { RelativePathString, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import * as OTPAuth from "otpauth";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,
+  Button,
   Easing,
   ScrollView,
   Text,
@@ -16,6 +17,7 @@ import Svg, { Path } from "react-native-svg";
 import * as icons from "simple-icons";
 import AccountForm from "../components/AccountForm";
 import { useForm } from "../context/FormContext";
+import { decryptText } from "../utils/crypto";
 
 export default function DetailsScreen() {
   const router = useRouter();
@@ -43,6 +45,7 @@ export default function DetailsScreen() {
   const [otpCode, setOtpCode] = useState<string>("Generating...");
   const [otpPeriod, setOtpPeriod] = useState<number>(30);
   const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [decryptedPassword, setDecryptedPassword] = useState<string>("");
   const [notesText, setNotesText] = useState<string>("");
 
   const progress = useRef(new Animated.Value(1)).current;
@@ -88,9 +91,11 @@ export default function DetailsScreen() {
       }
 
       const parsed = JSON.parse(storedData);
+      const decryptedPw = await decryptText(parsed.password);
       setData(parsed);
       setFormData(parsed);
-      setNotesText(parsed.notes || "");
+      setNotesText(parsed.notes || "");      
+      setDecryptedPassword(decryptedPw);
 
       if (!parsed.value) return;
 
@@ -137,6 +142,9 @@ export default function DetailsScreen() {
   // Header: Edit / Cancel
   useEffect(() => {
     navigation.setOptions({
+      headerLeft: () => (
+        <Button title="Accounts" onPress={() => router.push('/')} />
+      ),
       headerTitle: data?.accountName || "Account Details",
       headerRight: () => (
         !isEditing ? (
@@ -183,6 +191,7 @@ export default function DetailsScreen() {
         notes={notes}
         setFormData={setFormData}
         resetForm={resetForm}
+        referer={`/details/${key}` as RelativePathString}
       />
     );
   }
@@ -311,7 +320,7 @@ export default function DetailsScreen() {
         Password
       </Text>
       <TouchableOpacity
-        onPress={() => copyToClipboard(data?.password || "", "password")}
+        onPress={() => copyToClipboard(decryptedPassword || "", "password")}
         activeOpacity={0.8}
       >
         <Animated.View
@@ -331,9 +340,9 @@ export default function DetailsScreen() {
             }}
           >
             <Text style={{ fontSize: 16, color: "#000", fontWeight: "500" }}>
-              {data?.password
+              {decryptedPassword
                 ? showPassword
-                  ? data.password
+                  ? decryptedPassword
                   : "••••••••"
                 : "N/A"}
             </Text>

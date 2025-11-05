@@ -44,7 +44,7 @@ export default function AccountForm({
   const [isSaving, setIsSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
-  const [missingFields, setMissingFields] = useState<string[]>([]); 
+  const [missingFields, setMissingFields] = useState<string[]>([]);
 
   const handleSubmit = async () => {
     const missing: string[] = [];
