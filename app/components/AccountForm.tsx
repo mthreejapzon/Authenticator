@@ -121,9 +121,9 @@ export default function AccountForm({
   useEffect(() => {
     (async() => {
       const decryptedPw = await decryptText(password);
-      setDecryptedPassword(decryptedPw);
+      setFormData({ password: decryptedPw });
     })()
-  }, [password]);
+  }, []);
 
   return (
     <KeyboardAvoidingView
@@ -163,14 +163,14 @@ export default function AccountForm({
           <Text style={styles.label}>Password</Text>
           <View style={getInputContainerStyle("password")}>
             <TextInput
-              value={decryptedPassword}
+              value={password}
               onChangeText={(text) => handleChange("password", text)}
               placeholder="Required"
               secureTextEntry={!showPassword}
               textContentType="oneTimeCode"
               style={styles.textField}
             />
-            {decryptedPassword.length > 0 && (
+            {password.length > 0 && (
               <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                 <Text style={styles.toggleText}>
                   {showPassword ? "Hide" : "Show"}
