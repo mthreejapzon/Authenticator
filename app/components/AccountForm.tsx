@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { RelativePathString, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import * as OTPAuth from "otpauth";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -14,7 +14,7 @@ import {
   View
 } from "react-native";
 import type { FormFields } from "../context/FormContext";
-import { encryptText } from "../utils/crypto";
+import { decryptText, encryptText } from "../utils/crypto";
 
 export default function AccountForm({
   accountKey,
@@ -45,6 +45,7 @@ export default function AccountForm({
   const [showPassword, setShowPassword] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
+  const [decryptedPassword, setDecryptedPassword] = useState<string>("");
 
   const handleSubmit = async () => {
     const missing: string[] = [];
@@ -117,6 +118,13 @@ export default function AccountForm({
     missingFields.includes(fieldName) && styles.inputError,
   ];
 
+  useEffect(() => {
+    (async() => {
+      const decryptedPw = await decryptText(password);
+      setDecryptedPassword(decryptedPw);
+    })()
+  }, [password]);
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
@@ -155,14 +163,14 @@ export default function AccountForm({
           <Text style={styles.label}>Password</Text>
           <View style={getInputContainerStyle("password")}>
             <TextInput
-              value={password}
+              value={decryptedPassword}
               onChangeText={(text) => handleChange("password", text)}
               placeholder="Required"
               secureTextEntry={!showPassword}
               textContentType="oneTimeCode"
               style={styles.textField}
             />
-            {password.length > 0 && (
+            {decryptedPassword.length > 0 && (
               <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                 <Text style={styles.toggleText}>
                   {showPassword ? "Hide" : "Show"}
