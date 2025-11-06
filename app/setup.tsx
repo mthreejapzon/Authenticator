@@ -1,5 +1,8 @@
+import { useEffect } from "react";
 import AccountForm from "./components/AccountForm";
 import { useForm } from "./context/FormContext";
+
+
 export default function SetupScreen() {
   const {
     accountName,
@@ -10,6 +13,12 @@ export default function SetupScreen() {
     setFormData,
     resetForm,
   } = useForm();
+
+  useEffect(() => {
+    resetForm(); // clear on mount
+    return () => resetForm(); // clear on unmount too
+  }, []);
+  
 
   return (
     <AccountForm 

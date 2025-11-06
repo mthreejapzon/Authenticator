@@ -11,50 +11,62 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import type { FormFields } from "../context/FormContext";
 import { decryptText, encryptText } from "../utils/crypto";
 
 export default function AccountForm({
   accountKey,
-  accountName, 
-  username, 
+  accountName,
+  username,
   password,
   accountOtp,
-  secretKey, 
-  notes, 
-  setFormData, 
+  secretKey,
+  notes,
+  setFormData,
   resetForm,
   referer,
 }: {
-  accountKey?: string | undefined,
-  accountName: string,
-  username: string,
-  password: string,
-  accountOtp?: string,
-  secretKey: string,
-  notes: string,
-  setFormData: (data: Partial<FormFields>) => void,
-  resetForm: () => void,
-  referer?: RelativePathString,
+  accountKey?: string | undefined;
+  accountName: string;
+  username: string;
+  password: string;
+  accountOtp?: string;
+  secretKey: string;
+  notes: string;
+  setFormData: (data: Partial<FormFields>) => void;
+  resetForm: () => void;
+  referer?: RelativePathString;
 }) {
   const router = useRouter();
-
   const [isSaving, setIsSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
-  const [decryptedPassword, setDecryptedPassword] = useState<string>("");
+
+  // ✅ Decrypt password when editing existing account
+  useEffect(() => {
+    (async () => {
+      if (accountKey && password) {
+        try {
+          const decryptedPw = await decryptText(password);
+          if (decryptedPw) {
+            setFormData({ password: decryptedPw });
+          }
+        } catch (err) {
+          console.error("Error decrypting password:", err);
+        }
+      }
+    })();
+  }, [accountKey]);
 
   const handleSubmit = async () => {
     const missing: string[] = [];
     if (!accountName.trim()) missing.push("accountName");
     if (!username.trim()) missing.push("username");
     if (!password.trim()) missing.push("password");
-
     setMissingFields(missing);
-
     if (missing.length > 0) return;
 
     try {
@@ -70,7 +82,6 @@ export default function AccountForm({
       }
 
       const key = accountKey || `account_${Date.now()}`;
-
       const encryptedPassword = await encryptText(password.trim());
 
       const data = {
@@ -83,19 +94,21 @@ export default function AccountForm({
 
       await SecureStore.setItemAsync(key, JSON.stringify(data));
 
+      // Add to stored keys if new
       if (!accountKey) {
         const storedKeys = await SecureStore.getItemAsync("userAccountKeys");
         const keys = storedKeys ? JSON.parse(storedKeys) : [];
-        keys.push(key);
+        if (!keys.includes(key)) keys.push(key);
         await SecureStore.setItemAsync("userAccountKeys", JSON.stringify(keys));
       }
 
       resetForm();
       setMissingFields([]);
-      router.dismissAll();
-      router.replace(referer || '/');
+
+      // ✅ Use dynamic route: /details/[key]
+      router.replace(`/details/${key}` as RelativePathString);
     } catch (error) {
-      console.error(error);
+      console.error("Error saving account:", error);
     } finally {
       setIsSaving(false);
     }
@@ -117,13 +130,6 @@ export default function AccountForm({
     styles.inputContainer,
     missingFields.includes(fieldName) && styles.inputError,
   ];
-
-  useEffect(() => {
-    (async() => {
-      const decryptedPw = await decryptText(password);
-      setFormData({ password: decryptedPw });
-    })()
-  }, []);
 
   return (
     <KeyboardAvoidingView
@@ -194,7 +200,6 @@ export default function AccountForm({
                 autoCapitalize="none"
                 style={styles.textField}
               />
-
               {secretKey?.length > 0 && (
                 <TouchableOpacity
                   onPress={() => setShowSecret(!showSecret)}
@@ -226,12 +231,15 @@ export default function AccountForm({
             onChangeText={(text) => handleChange("notes", text)}
             placeholder="Anything helpful to remember"
             multiline
-            style={[styles.input, { height: 100, paddingTop: 10, textAlignVertical: "top" }]}
+            style={[
+              styles.input,
+              { height: 100, paddingTop: 10, textAlignVertical: "top" },
+            ]}
           />
         </View>
       </ScrollView>
 
-      {/* Submit Button fixed at bottom */}
+      {/* Submit Button */}
       <View style={styles.submitWrapper}>
         <TouchableOpacity
           onPress={handleSubmit}
