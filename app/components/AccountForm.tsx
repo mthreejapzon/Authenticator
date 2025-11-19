@@ -45,22 +45,42 @@ export default function AccountForm({
   const [showSecret, setShowSecret] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
 
-  // ✅ Decrypt password when editing existing account
+  /**
+   * ------------------------------------------------------
+   * FIX #1 — RESET FORM WHEN CREATING A NEW ACCOUNT
+   * ------------------------------------------------------
+   */
   useEffect(() => {
+    if (!accountKey) {
+      resetForm();
+    }
+  }, [accountKey]);
+
+  /**
+   * ------------------------------------------------------
+   * FIX #2 — ONLY DECRYPT PASSWORD WHEN EDITING
+   * ------------------------------------------------------
+   */
+  useEffect(() => {
+    if (!accountKey) return; // do NOT run in create mode
+
     (async () => {
-      if (accountKey && password) {
-        try {
+      try {
+        if (password) {
           const decryptedPw = await decryptText(password);
-          if (decryptedPw) {
-            setFormData({ password: decryptedPw });
-          }
-        } catch (err) {
-          console.error("Error decrypting password:", err);
+          setFormData({ password: decryptedPw });
         }
+      } catch (err) {
+        console.error("Error decrypting password:", err);
       }
     })();
   }, [accountKey]);
 
+  /**
+   * ------------------------------------------------------
+   * SUBMIT HANDLER
+   * ------------------------------------------------------
+   */
   const handleSubmit = async () => {
     const missing: string[] = [];
     if (!accountName.trim()) missing.push("accountName");
@@ -94,7 +114,6 @@ export default function AccountForm({
 
       await SecureStore.setItemAsync(key, JSON.stringify(data));
 
-      // Add to stored keys if new
       if (!accountKey) {
         const storedKeys = await SecureStore.getItemAsync("userAccountKeys");
         const keys = storedKeys ? JSON.parse(storedKeys) : [];
@@ -105,7 +124,6 @@ export default function AccountForm({
       resetForm();
       setMissingFields([]);
 
-      // ✅ Use dynamic route: /details/[key]
       router.replace(`/details/${key}` as RelativePathString);
     } catch (error) {
       console.error("Error saving account:", error);
@@ -186,7 +204,7 @@ export default function AccountForm({
           </View>
         </View>
 
-        {/* One-Time Password (Optional) */}
+        {/* OTP */}
         <View style={styles.fieldWrapper}>
           <Text style={styles.label}>One-Time Password (Optional)</Text>
           <View style={styles.otpRow}>
@@ -212,7 +230,6 @@ export default function AccountForm({
               )}
             </View>
 
-            {/* QR Button beside the input */}
             <TouchableOpacity
               onPress={() => router.push("/add-qr")}
               style={styles.qrButtonAligned}
@@ -223,7 +240,7 @@ export default function AccountForm({
           </View>
         </View>
 
-        {/* Notes (Optional) */}
+        {/* Notes */}
         <View style={styles.fieldWrapper}>
           <Text style={styles.label}>Notes (Optional)</Text>
           <TextInput
@@ -239,7 +256,7 @@ export default function AccountForm({
         </View>
       </ScrollView>
 
-      {/* Submit Button */}
+      {/* Save Button */}
       <View style={styles.submitWrapper}>
         <TouchableOpacity
           onPress={handleSubmit}
@@ -292,7 +309,6 @@ const styles = StyleSheet.create({
   otpRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     gap: 10,
   },
   otpInputContainer: {
@@ -313,8 +329,6 @@ const styles = StyleSheet.create({
     color: "#000",
   },
   toggleButton: {
-    marginRight: 6,
-    paddingVertical: 8,
     paddingHorizontal: 4,
   },
   toggleText: {
@@ -331,10 +345,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "#ccc",
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
   },
   submitWrapper: {
     position: "absolute",

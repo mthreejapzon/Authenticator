@@ -1,10 +1,30 @@
-import { Link, useFocusEffect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+import { Link, useFocusEffect, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import { useCallback, useState } from "react";
-import { Text, TouchableOpacity, View } from "react-native";
+import { useCallback, useLayoutEffect, useState } from "react";
+import { Pressable, Text, TouchableOpacity, View } from "react-native";
 import AccountList from "./components/AccountList";
 
 export default function Index() {
+  const navigation = useNavigation();
+  const router = useRouter();
+
+  // ⭐ Add header with Settings button
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: "Authenticator",
+      headerRight: () => (
+        <Pressable
+          onPress={() => router.push("/settings")}
+          style={{ paddingHorizontal: 12 }}
+        >
+          <Ionicons name="settings-outline" size={24} />
+        </Pressable>
+      ),
+    });
+  }, [navigation]);
+
   const [accountKeys, setAccountKeys] = useState<string[]>([]);
   const [accounts, setAccounts] = useState<
     {
@@ -18,7 +38,6 @@ export default function Index() {
     }[]
   >([]);
 
-  // 🔄 Load stored account keys and data
   const loadAccounts = useCallback(async () => {
     try {
       const storedKeys = await SecureStore.getItemAsync("userAccountKeys");
@@ -39,20 +58,21 @@ export default function Index() {
     }
   }, []);
 
-  // ✅ Automatically reload whenever this screen gains focus
   useFocusEffect(
     useCallback(() => {
       loadAccounts();
     }, [loadAccounts])
   );
 
-  // 🗑 Delete account
   const deleteAccount = async (key: string) => {
     try {
       await SecureStore.deleteItemAsync(key);
 
       const updatedKeys = accountKeys.filter((k) => k !== key);
-      await SecureStore.setItemAsync("userAccountKeys", JSON.stringify(updatedKeys));
+      await SecureStore.setItemAsync(
+        "userAccountKeys",
+        JSON.stringify(updatedKeys)
+      );
 
       setAccountKeys(updatedKeys);
       setAccounts((prev) => prev.filter((acc) => acc.key !== key));
@@ -61,7 +81,6 @@ export default function Index() {
     }
   };
 
-  // ✏️ Edit account name
   const editAccount = async (key: string, newName: string) => {
     try {
       const storedData = await SecureStore.getItemAsync(key);
@@ -87,16 +106,18 @@ export default function Index() {
         padding: 20,
       }}
     >
-      {/* Accounts List */}
       {accounts.length ? (
-        <AccountList accounts={accounts} onDelete={deleteAccount} onEdit={editAccount} />
+        <AccountList
+          accounts={accounts}
+          onDelete={deleteAccount}
+          onEdit={editAccount}
+        />
       ) : (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
           <Text style={{ fontSize: 16, color: "#666" }}>No accounts yet</Text>
         </View>
       )}
 
-      {/* Add button */}
       <Link href="/setup" asChild>
         <TouchableOpacity
           style={{
