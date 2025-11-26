@@ -1,8 +1,11 @@
-import CryptoJS from "crypto-js";
-import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  decryptWithMasterKey,
+  encryptWithMasterKey,
+  getOrCreateMasterKey
+} from './utils/crypto';
 
 /**
  * Keys used in SecureStore
@@ -10,92 +13,10 @@ import { ActivityIndicator, Alert, ScrollView, Text, TextInput, TouchableOpacity
 const GITHUB_TOKEN_KEY = "github_token";
 const BACKUP_GIST_ID_KEY = "backup_gist_id";
 const LAST_BACKUP_KEY = "last_backup_at";
-const BACKUP_HISTORY_KEY = "backup_history"; // array of { id, gistId, atIso }
+const BACKUP_HISTORY_KEY = "backup_history";
 const USER_ACCOUNT_KEYS = "userAccountKeys";
-const MASTER_KEY_STORAGE_KEY = "encryptionMasterKey"; // matches your crypto.ts
 
 type BackupHistoryItem = { id: string; gistId: string; atIso: string; note?: string };
-
-/**
- * Helper: create or return a base64 master key stored in SecureStore.
- * Uses Crypto.getRandomValues from expo-crypto. If unavailable, alerts user.
- */
-async function getOrCreateMasterKey(): Promise<string> {
-  const existing = await SecureStore.getItemAsync(MASTER_KEY_STORAGE_KEY);
-  if (existing) return existing;
-
-  // generate 32 random bytes using expo-crypto's getRandomValues
-  try {
-    // getRandomValues returns Uint8Array
-    const ivBytes = Crypto.getRandomValues(new Uint8Array(32));
-    // convert to WordArray then base64
-    const wordArray = CryptoJS.lib.WordArray.create(Array.from(ivBytes));
-    const masterKey = CryptoJS.enc.Base64.stringify(wordArray);
-    await SecureStore.setItemAsync(MASTER_KEY_STORAGE_KEY, masterKey);
-    return masterKey;
-  } catch (err) {
-    console.error("Crypto.getRandomValues failed:", err);
-    throw new Error(
-      "Native crypto module not available. Please run on a real device or ensure your environment supports secure random generation."
-    );
-  }
-}
-
-/**
- * AES encrypt JSON text with derived key from masterKey.
- * Returns an object { cipher: "v2:<ivB64>:<ctB64>", exportedAt: ISO }.
- * We use AES-CBC with PKCS7 (same style as your crypto.ts).
- */
-async function encryptJsonPayload(masterKeyB64: string, jsonText: string) {
-  // derive key: SHA256(masterKey)
-  const key = CryptoJS.SHA256(masterKeyB64);
-
-  // iv: 16 bytes
-  let ivBytes: Uint8Array;
-  try {
-    ivBytes = Crypto.getRandomValues(new Uint8Array(16));
-  } catch (err) {
-    console.error("Crypto.getRandomValues (iv) failed:", err);
-    throw new Error("Secure random not available for IV generation.");
-  }
-
-  const ivWordArray = CryptoJS.lib.WordArray.create(Array.from(ivBytes));
-  const ivB64 = CryptoJS.enc.Base64.stringify(ivWordArray);
-
-  // encrypt
-  const encrypted = CryptoJS.AES.encrypt(jsonText, key, {
-    iv: ivWordArray,
-    mode: CryptoJS.mode.CBC,
-    padding: CryptoJS.pad.Pkcs7,
-  });
-
-  const ctB64 = encrypted.toString(); // already base64-compatible string
-  const fullCipher = `v2:${ivB64}:${ctB64}`;
-
-  return { cipher: fullCipher, exportedAt: new Date().toISOString() };
-}
-
-/**
- * Decrypt a v2 cipher string using the masterKey (base64)
- */
-async function decryptJsonPayload(masterKeyB64: string, cipherText: string) {
-  if (!cipherText.startsWith("v2:")) {
-    throw new Error("Unsupported backup format");
-  }
-  const key = CryptoJS.SHA256(masterKeyB64);
-  const [, ivB64, ctB64] = cipherText.split(":");
-  const iv = CryptoJS.enc.Base64.parse(ivB64);
-
-  const decrypted = CryptoJS.AES.decrypt(ctB64, key, {
-    iv,
-    mode: CryptoJS.mode.CBC,
-    padding: CryptoJS.pad.Pkcs7,
-  });
-
-  const plain = decrypted.toString(CryptoJS.enc.Utf8);
-  if (!plain) throw new Error("Decryption failed (possibly wrong master key)");
-  return plain;
-}
 
 /**
  * Main Settings screen component
@@ -110,7 +31,7 @@ export default function SettingsScreen() {
   const [lastBackup, setLastBackup] = useState<string | null>(null);
   const [history, setHistory] = useState<BackupHistoryItem[]>([]);
 
-  // load saved values
+  // Load saved values
   useEffect(() => {
     (async () => {
       try {
@@ -121,7 +42,6 @@ export default function SettingsScreen() {
 
         if (t) {
           setHasToken(true);
-          // mask token for UI (show only last 4 chars)
           setMaskedToken("••••••••" + (t.slice(-4) || ""));
         }
         if (g) setGistId(g);
@@ -157,16 +77,46 @@ export default function SettingsScreen() {
     }
   };
 
+  // Remove token AND clear all backup metadata
   const removeToken = async () => {
-    try {
-      await SecureStore.deleteItemAsync(GITHUB_TOKEN_KEY);
-      setHasToken(false);
-      setMaskedToken("");
-      Alert.alert("Removed", "GitHub token removed.");
-    } catch (err) {
-      console.error(err);
-      Alert.alert("Remove failed", "Could not remove token.");
-    }
+    Alert.alert(
+      "Remove Token & Clear Backups",
+      "This will remove your GitHub token and clear all backup metadata (Gist ID, history, etc.). Your accounts will NOT be deleted. Continue?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // Remove GitHub token
+              await SecureStore.deleteItemAsync(GITHUB_TOKEN_KEY);
+              
+              // Clear all backup metadata
+              await SecureStore.deleteItemAsync(BACKUP_GIST_ID_KEY);
+              await SecureStore.deleteItemAsync(LAST_BACKUP_KEY);
+              await SecureStore.deleteItemAsync(BACKUP_HISTORY_KEY);
+              
+              // Update state
+              setHasToken(false);
+              setMaskedToken("");
+              setGistId(null);
+              setLastBackup(null);
+              setHistory([]);
+              setStatus("");
+              
+              Alert.alert("Removed", "GitHub token and backup metadata removed.");
+            } catch (err) {
+              console.error(err);
+              Alert.alert("Remove failed", "Could not remove token.");
+            }
+          }
+        }
+      ]
+    );
   };
 
   // Export all accounts -> encrypt -> upload gist
@@ -206,21 +156,22 @@ export default function SettingsScreen() {
       const jsonText = JSON.stringify(payload, null, 2);
 
       setStatus("Preparing encryption key...");
+      
       // 3) Get or create master key
       let masterKey: string;
       try {
         masterKey = await getOrCreateMasterKey();
       } catch (err: any) {
-        // Provide actionable error: native crypto not available
         Alert.alert("Backup failed", err.message || "Native crypto unavailable");
         setIsWorking(false);
         setStatus("Failed: crypto unavailable");
         return;
       }
 
-      // 4) Encrypt payload
+      // 4) Encrypt payload using the crypto module
       setStatus("Encrypting backup...");
-      const { cipher, exportedAt } = await encryptJsonPayload(masterKey, jsonText);
+      const cipher = await encryptWithMasterKey(jsonText, masterKey);
+      const exportedAt = new Date().toISOString();
 
       // 5) Upload to gist
       if (!hasToken) {
@@ -247,11 +198,7 @@ export default function SettingsScreen() {
           public: false,
           files: {
             "authenticator_backup.enc": {
-              content: JSON.stringify({
-                format: "v2-encrypted-blob",
-                exportedAt,
-                cipher, // encrypted v2:<iv>:<ct>
-              }),
+              content: cipher,
             },
           },
         }),
@@ -265,15 +212,20 @@ export default function SettingsScreen() {
 
       const data = await res.json();
       const newGistId: string = data.id;
+      
       // Save gist id and last backup timestamp and history
       await SecureStore.setItemAsync(BACKUP_GIST_ID_KEY, newGistId);
       await SecureStore.setItemAsync(LAST_BACKUP_KEY, exportedAt);
       setGistId(newGistId);
       setLastBackup(exportedAt);
 
-      // update history
-      const histItem: BackupHistoryItem = { id: String(Date.now()), gistId: newGistId, atIso: exportedAt };
-      const newHistory = [histItem, ...history].slice(0, 20); // keep last 20
+      // Update history
+      const histItem = { 
+        id: String(Date.now()) + "-" + Math.random().toString(36).slice(2),
+        gistId: newGistId,
+        atIso: exportedAt
+      };      
+      const newHistory = [histItem, ...history].slice(0, 20);
       setHistory(newHistory);
       await SecureStore.setItemAsync(BACKUP_HISTORY_KEY, JSON.stringify(newHistory));
 
@@ -292,93 +244,131 @@ export default function SettingsScreen() {
   const importFromLatestBackup = async () => {
     setIsWorking(true);
     setStatus("Preparing restore...");
+
     try {
-      const savedGistId = gistId || (history.length > 0 ? history[0].gistId : null);
-      if (!savedGistId) {
-        Alert.alert("No backup found", "No backup Gist ID saved in settings/history.");
-        setIsWorking(false);
-        return;
-      }
       if (!hasToken) {
         Alert.alert("Missing token", "Please save your GitHub token in Settings first.");
         setIsWorking(false);
         return;
       }
 
-      const token = (await SecureStore.getItemAsync(GITHUB_TOKEN_KEY)) || "";
-      setStatus("Fetching backup from GitHub...");
-      const res = await fetch(`https://api.github.com/gists/${savedGistId}`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
-      });
-
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        console.error("Fetch gist failed:", res.status, txt);
-        throw new Error("Failed to fetch backup from Gist");
-      }
-
-      const data = await res.json();
-      // look for the encrypted file (authenticator_backup.enc)
-      const file = data.files?.["authenticator_backup.enc"] ?? Object.values(data.files ?? {})[0];
-      if (!file || !file.content) throw new Error("Backup file not found in gist");
-
-      let parsed: any;
-      try {
-        parsed = typeof file.content === "string" ? JSON.parse(file.content) : file.content;
-      } catch {
-        throw new Error("Backup file content not valid JSON");
-      }
-
-      if (!parsed?.cipher) throw new Error("Backup does not contain encrypted payload");
-
-      // get master key
-      let masterKey: string;
-      try {
-        masterKey = await getOrCreateMasterKey();
-      } catch (err: any) {
-        Alert.alert("Restore failed", err.message || "Native crypto not available");
+      const token = await SecureStore.getItemAsync(GITHUB_TOKEN_KEY);
+      if (!token) {
+        Alert.alert("Missing token", "GitHub token not found.");
         setIsWorking(false);
         return;
       }
 
-      setStatus("Decrypting backup...");
-      const plaintext = await decryptJsonPayload(masterKey, parsed.cipher);
+      // Fetch all gists under this PAT
+      setStatus("Searching for latest backup...");
+      const listRes = await fetch(`https://api.github.com/gists`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+        },
+      });
 
-      // parse JSON payload
+      if (!listRes.ok) {
+        throw new Error("Failed to fetch gists");
+      }
+
+      const gists = await listRes.json();
+
+      // Find all gists containing authenticator_backup.enc
+      const backupGists = gists
+        .filter((g: any) => g.files && g.files["authenticator_backup.enc"])
+        .sort(
+          (a: any, b: any) =>
+            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        );
+
+      if (backupGists.length === 0) {
+        Alert.alert("No backups found", "No encrypted Authenticator backups found in your GitHub Gists.");
+        setIsWorking(false);
+        return;
+      }
+
+      // Pick the most recently updated gist
+      const latest = backupGists[0];
+      const latestGistId = latest.id;
+
+      // Save gist ID for future direct restores
+      await SecureStore.setItemAsync(BACKUP_GIST_ID_KEY, latestGistId);
+      setGistId(latestGistId);
+
+      // Fetch encrypted backup file
+      setStatus("Fetching latest backup...");
+      const gistRes = await fetch(`https://api.github.com/gists/${latestGistId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+        },
+      });
+
+      if (!gistRes.ok) {
+        throw new Error("Failed to fetch backup file");
+      }
+
+      const gistData = await gistRes.json();
+      const file = gistData.files["authenticator_backup.enc"];
+
+      if (!file || !file.content) {
+        throw new Error("Backup file has no content");
+      }
+
+      const rawContent = file.content.trim();
+
+      // Support BOTH formats (old JSON wrapper and new raw cipher)
+      let cipher: string;
+
+      if (rawContent.startsWith("{")) {
+        // OLD FORMAT: JSON wrapper
+        console.log("Detected old JSON format backup");
+        try {
+          const parsed = JSON.parse(rawContent);
+          cipher = parsed.cipher;
+          
+          if (!cipher) {
+            throw new Error("Backup file is missing encrypted content.");
+          }
+        } catch (e) {
+          throw new Error("Failed to parse backup JSON.");
+        }
+      } else if (rawContent.startsWith("v2:")) {
+        // NEW FORMAT: Raw cipher string
+        console.log("Detected new raw cipher format backup");
+        cipher = rawContent;
+      } else {
+        throw new Error(`Invalid backup format. File starts with: ${rawContent.substring(0, 20)}...`);
+      }
+
+      // Get master key
+      const masterKey = await getOrCreateMasterKey();
+
+      // Decrypt
+      setStatus("Decrypting backup...");
+      const plaintext = await decryptWithMasterKey(cipher, masterKey);
+
+      // Parse decrypted content
       const payload = JSON.parse(plaintext);
       const accounts = payload.accounts ?? {};
 
-      // Save accounts to SecureStore
+      // Restore accounts
       const keys = Object.keys(accounts);
       for (const k of keys) {
         await SecureStore.setItemAsync(k, JSON.stringify(accounts[k]));
       }
-      // store keys list
       await SecureStore.setItemAsync(USER_ACCOUNT_KEYS, JSON.stringify(keys));
 
-      // Save last restore timestamp in history if desired
-      const restoredAt = new Date().toISOString();
-      setStatus("Restore complete");
-      Alert.alert("Restore complete", `Restored ${keys.length} account(s)`);
+      setStatus("Restore complete!");
+      Alert.alert("Restore complete", `Restored ${keys.length} account(s).`);
     } catch (err: any) {
-      console.error("Import failed:", err);
+      console.error("Restore error:", err);
       Alert.alert("Restore failed", err.message || String(err));
-      setStatus(`Restore failed: ${err.message || String(err)}`);
+      setStatus("Restore failed");
     } finally {
       setIsWorking(false);
     }
-  };
-
-  // Helper to clear all backup metadata (NOT deleting gist)
-  const clearBackupMetadata = async () => {
-    await SecureStore.deleteItemAsync(BACKUP_GIST_ID_KEY);
-    await SecureStore.deleteItemAsync(LAST_BACKUP_KEY);
-    await SecureStore.deleteItemAsync(BACKUP_HISTORY_KEY);
-    setGistId(null);
-    setLastBackup(null);
-    setHistory([]);
-    setStatus("Backup metadata cleared");
-    Alert.alert("Cleared", "Backup metadata removed from device.");
   };
 
   return (
@@ -391,18 +381,15 @@ export default function SettingsScreen() {
 
         {hasToken ? (
           <>
-            <Text style={{ marginBottom: 10, color: "#333" }}>Token saved: <Text style={{ fontFamily: "monospace" }}>{maskedToken}</Text></Text>
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <TouchableOpacity
-                onPress={() => {
-                  // allow replacing token: reveal input by clearing saved token
-                  removeToken();
-                }}
-                style={{ flex: 1, backgroundColor: "#E63946", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
-              >
-                <Text style={{ color: "white", fontWeight: "600" }}>Remove Token</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={{ marginBottom: 10, color: "#333" }}>
+              Token saved: <Text style={{ fontFamily: "monospace" }}>{maskedToken}</Text>
+            </Text>
+            <TouchableOpacity
+              onPress={removeToken}
+              style={{ backgroundColor: "#E63946", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
+            >
+              <Text style={{ color: "white", fontWeight: "600" }}>Remove Token & Clear Metadata</Text>
+            </TouchableOpacity>
           </>
         ) : (
           <>
@@ -421,7 +408,10 @@ export default function SettingsScreen() {
               }}
               autoCapitalize="none"
             />
-            <TouchableOpacity onPress={saveToken} style={{ backgroundColor: "#007AFF", paddingVertical: 12, borderRadius: 10, alignItems: "center" }}>
+            <TouchableOpacity 
+              onPress={saveToken} 
+              style={{ backgroundColor: "#007AFF", paddingVertical: 12, borderRadius: 10, alignItems: "center" }}
+            >
               <Text style={{ color: "white", fontWeight: "600" }}>Save Token</Text>
             </TouchableOpacity>
           </>
@@ -437,7 +427,11 @@ export default function SettingsScreen() {
           style={{ backgroundColor: "#28a745", paddingVertical: 12, borderRadius: 10, alignItems: "center", marginBottom: 12 }}
           disabled={isWorking}
         >
-          {isWorking && status.includes("Uploading") ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "white", fontWeight: "600" }}>Backup Now (encrypted)</Text>}
+          {isWorking && status.includes("Uploading") ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={{ color: "white", fontWeight: "600" }}>Backup Now (encrypted)</Text>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -445,11 +439,11 @@ export default function SettingsScreen() {
           style={{ backgroundColor: "#6c757d", paddingVertical: 12, borderRadius: 10, alignItems: "center", marginBottom: 8 }}
           disabled={isWorking}
         >
-          {isWorking && status.includes("Fetching") ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "white", fontWeight: "600" }}>Restore Latest Backup</Text>}
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={clearBackupMetadata} style={{ backgroundColor: "#F59E0B", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}>
-          <Text style={{ color: "white", fontWeight: "600" }}>Clear Backup Metadata</Text>
+          {isWorking && status.includes("Fetching") ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={{ color: "white", fontWeight: "600" }}>Restore Latest Backup</Text>
+          )}
         </TouchableOpacity>
 
         {gistId && (
@@ -460,7 +454,13 @@ export default function SettingsScreen() {
       {/* Last backup + history */}
       <View style={{ backgroundColor: "#fff", padding: 14, borderRadius: 12 }}>
         <Text style={{ fontSize: 16, fontWeight: "600", marginBottom: 8 }}>Backup History</Text>
-        {lastBackup ? <Text style={{ color: "#333", marginBottom: 8 }}>Last Backup: {new Date(lastBackup).toLocaleString()}</Text> : <Text style={{ color: "#777", marginBottom: 8 }}>No backups yet</Text>}
+        {lastBackup ? (
+          <Text style={{ color: "#333", marginBottom: 8 }}>
+            Last Backup: {new Date(lastBackup).toLocaleString()}
+          </Text>
+        ) : (
+          <Text style={{ color: "#777", marginBottom: 8 }}>No backups yet</Text>
+        )}
 
         {history.length === 0 ? (
           <Text style={{ color: "#777" }}>No backup history</Text>

@@ -17,7 +17,7 @@ import Svg, { Path } from "react-native-svg";
 import * as icons from "simple-icons";
 import AccountForm from "../components/AccountForm";
 import { useForm } from "../context/FormContext";
-import { decryptText } from "../utils/crypto";
+import { decryptWithMasterKey, getOrCreateMasterKey } from "../utils/crypto";
 
 export default function DetailsScreen() {
   const router = useRouter();
@@ -54,8 +54,8 @@ export default function DetailsScreen() {
 
   // Animate progress bar smoothly
   const startProgressBar = (remainingSeconds: number) => {
-    progress.stopAnimation(); // stop previous animation
-    progress.setValue(remainingSeconds / otpPeriod); // start from remaining fraction
+    progress.stopAnimation();
+    progress.setValue(remainingSeconds / otpPeriod);
     Animated.timing(progress, {
       toValue: 0,
       duration: remainingSeconds * 1000,
@@ -91,7 +91,11 @@ export default function DetailsScreen() {
       }
 
       const parsed = JSON.parse(storedData);
-      const decryptedPw = await decryptText(parsed.password);
+      
+      // Decrypt password using master key
+      const masterKey = await getOrCreateMasterKey();
+      const decryptedPw = await decryptWithMasterKey(parsed.password, masterKey);
+      
       setData(parsed);
       setFormData(parsed);
       setNotesText(parsed.notes || "");      
@@ -109,7 +113,6 @@ export default function DetailsScreen() {
             const code = totp.generate();
             setOtpCode(code);
 
-            // Compute remaining fraction for progress bar
             const epoch = Math.floor(Date.now() / 1000);
             const remaining = totp.period - (epoch % totp.period);
             startProgressBar(remaining);

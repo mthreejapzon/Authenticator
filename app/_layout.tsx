@@ -38,6 +38,13 @@ export default function RootLayout() {
               headerTitle: "Account Details",
             }}
           />
+          <Stack.Screen 
+            name="settings" 
+            options={{ 
+              title: "Settings",
+              headerShown: true 
+            }} 
+          />
         </Stack>
       </FormProvider>
     </GestureHandlerRootView>

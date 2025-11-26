@@ -14,7 +14,7 @@ import {
   View,
 } from "react-native";
 import type { FormFields } from "../context/FormContext";
-import { decryptText, encryptText } from "../utils/crypto";
+import { decryptWithMasterKey, encryptWithMasterKey, getOrCreateMasterKey } from "../utils/crypto";
 
 export default function AccountForm({
   accountKey,
@@ -67,7 +67,8 @@ export default function AccountForm({
     (async () => {
       try {
         if (password) {
-          const decryptedPw = await decryptText(password);
+          const masterKey = await getOrCreateMasterKey();
+          const decryptedPw = await decryptWithMasterKey(password, masterKey);
           setFormData({ password: decryptedPw });
         }
       } catch (err) {
@@ -102,7 +103,10 @@ export default function AccountForm({
       }
 
       const key = accountKey || `account_${Date.now()}`;
-      const encryptedPassword = await encryptText(password.trim());
+      
+      // Get master key and encrypt password
+      const masterKey = await getOrCreateMasterKey();
+      const encryptedPassword = await encryptWithMasterKey(password.trim(), masterKey);
 
       const data = {
         accountName: accountName.trim(),
