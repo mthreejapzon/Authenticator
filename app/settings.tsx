@@ -198,7 +198,7 @@ export default function SettingsScreen() {
           public: false,
           files: {
             "authenticator_backup.enc": {
-              content: cipher,
+              content: cipher,  // 🔥 Raw cipher string only
             },
           },
         }),
@@ -418,31 +418,67 @@ export default function SettingsScreen() {
         )}
       </View>
 
+      {/* 🔥 Warning when no token */}
+      {!hasToken && (
+        <View
+          style={{
+            backgroundColor: "#fff3cd",
+            borderWidth: 1,
+            borderColor: "#ffc107",
+            padding: 14,
+            borderRadius: 12,
+            marginBottom: 16,
+          }}
+        >
+          <Text style={{ color: "#856404", fontSize: 14, lineHeight: 20 }}>
+            ⚠️ <Text style={{ fontWeight: "600" }}>GitHub token required:</Text> Please save a GitHub token above to enable backup and restore features.
+          </Text>
+        </View>
+      )}
+
       {/* Backup controls */}
       <View style={{ backgroundColor: "#fff", padding: 14, borderRadius: 12, marginBottom: 16 }}>
         <Text style={{ fontSize: 16, fontWeight: "600", marginBottom: 8 }}>Backup</Text>
 
+        {/* 🔥 Backup button - disabled when no token */}
         <TouchableOpacity
           onPress={exportAllAccounts}
-          style={{ backgroundColor: "#28a745", paddingVertical: 12, borderRadius: 10, alignItems: "center", marginBottom: 12 }}
-          disabled={isWorking}
+          style={{ 
+            backgroundColor: !hasToken || isWorking ? "#cccccc" : "#28a745", 
+            paddingVertical: 12, 
+            borderRadius: 10, 
+            alignItems: "center", 
+            marginBottom: 12 
+          }}
+          disabled={!hasToken || isWorking}
         >
           {isWorking && status.includes("Uploading") ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={{ color: "white", fontWeight: "600" }}>Backup Now (encrypted)</Text>
+            <Text style={{ color: "white", fontWeight: "600", opacity: !hasToken ? 0.6 : 1 }}>
+              Backup Now (encrypted)
+            </Text>
           )}
         </TouchableOpacity>
 
+        {/* 🔥 Restore button - disabled when no token */}
         <TouchableOpacity
           onPress={importFromLatestBackup}
-          style={{ backgroundColor: "#6c757d", paddingVertical: 12, borderRadius: 10, alignItems: "center", marginBottom: 8 }}
-          disabled={isWorking}
+          style={{ 
+            backgroundColor: !hasToken || isWorking ? "#cccccc" : "#6c757d", 
+            paddingVertical: 12, 
+            borderRadius: 10, 
+            alignItems: "center", 
+            marginBottom: 8 
+          }}
+          disabled={!hasToken || isWorking}
         >
           {isWorking && status.includes("Fetching") ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={{ color: "white", fontWeight: "600" }}>Restore Latest Backup</Text>
+            <Text style={{ color: "white", fontWeight: "600", opacity: !hasToken ? 0.6 : 1 }}>
+              Restore Latest Backup
+            </Text>
           )}
         </TouchableOpacity>
 

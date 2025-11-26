@@ -5,7 +5,6 @@ import * as OTPAuth from "otpauth";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,
-  Button,
   Easing,
   ScrollView,
   Text,
@@ -142,12 +141,11 @@ export default function DetailsScreen() {
     })();
   }, [key]);
 
-  // Header: Edit / Cancel
+  // 🔥 FIXED: Header configuration with back button
   useEffect(() => {
     navigation.setOptions({
-      headerLeft: () => (
-        <Button title="Accounts" onPress={() => router.push('/')} />
-      ),
+      // Use headerBackTitle instead of headerLeft to keep the back arrow
+      headerBackTitle: "Accounts",
       headerTitle: data?.accountName || "Account Details",
       headerRight: () => (
         !isEditing ? (
