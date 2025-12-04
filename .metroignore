@@ -1,0 +1,5 @@
+# Metro bundler ignore patterns
+electron/
+ELECTRON_README.md
+MIGRATION_GUIDE.md
+ELECTRON_QUICKSTART.md

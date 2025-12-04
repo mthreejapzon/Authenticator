@@ -1,22 +1,11 @@
 import CryptoJS from "crypto-js";
-import * as Crypto from "expo-crypto";
-import * as SecureStore from "expo-secure-store";
+import { Storage } from "./storage";
+import { getRandomBytes } from "./cryptoPolyfill";
 
 /**
  * Storage key for the master encryption key (used for backups)
  */
 const MASTER_KEY_STORAGE_KEY = "encryptionMasterKey";
-
-/**
- * Generate device-safe random bytes.
- */
-function getRandomBytes(length: number): Uint8Array {
-  try {
-    return Crypto.getRandomValues(new Uint8Array(length));
-  } catch (e) {
-    throw new Error("Secure random generator is not available.");
-  }
-}
 
 /**
  * Convert bytes → CryptoJS WordArray
@@ -72,7 +61,7 @@ export async function encryptText(
 
   // Store inside secure store only for faster local lookup
   const token = toShortToken(fullCipher);
-  await SecureStore.setItemAsync(`cipher_${token}`, fullCipher);
+  await Storage.setItemAsync(`cipher_${token}`, fullCipher);
 
   return token;
 }
@@ -89,7 +78,7 @@ export async function decryptText(
 
   // 1. If it's a short token (not starting with v2:)
   if (!cipherText.startsWith("v2:")) {
-    const stored = await SecureStore.getItemAsync(`cipher_${cipherText}`);
+    const stored = await Storage.getItemAsync(`cipher_${cipherText}`);
     if (stored) {
       cipherText = stored;
     } else {
@@ -132,7 +121,7 @@ export async function decryptText(
  * This key is used for encrypting/decrypting backup files.
  */
 export async function getOrCreateMasterKey(): Promise<string> {
-  const existing = await SecureStore.getItemAsync(MASTER_KEY_STORAGE_KEY);
+  const existing = await Storage.getItemAsync(MASTER_KEY_STORAGE_KEY);
   if (existing) return existing;
 
   try {
@@ -140,8 +129,8 @@ export async function getOrCreateMasterKey(): Promise<string> {
     const keyBytes = getRandomBytes(32);
     const wordArray = toWordArray(keyBytes);
     const masterKey = CryptoJS.enc.Base64.stringify(wordArray);
-    
-    await SecureStore.setItemAsync(MASTER_KEY_STORAGE_KEY, masterKey);
+
+    await Storage.setItemAsync(MASTER_KEY_STORAGE_KEY, masterKey);
     return masterKey;
   } catch (err) {
     console.error("Master key generation failed:", err);
@@ -230,13 +219,13 @@ export async function decryptWithMasterKey(
  * WARNING: This will make all existing backups unrecoverable!
  */
 export async function deleteMasterKey(): Promise<void> {
-  await SecureStore.deleteItemAsync(MASTER_KEY_STORAGE_KEY);
+  await Storage.deleteItemAsync(MASTER_KEY_STORAGE_KEY);
 }
 
 /**
  * Check if a master key exists in SecureStore.
  */
 export async function hasMasterKey(): Promise<boolean> {
-  const key = await SecureStore.getItemAsync(MASTER_KEY_STORAGE_KEY);
+  const key = await Storage.getItemAsync(MASTER_KEY_STORAGE_KEY);
   return key !== null;
 }

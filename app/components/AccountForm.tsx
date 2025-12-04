@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import { RelativePathString, useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import * as OTPAuth from "otpauth";
 import { useEffect, useState } from "react";
 import {
@@ -15,6 +14,7 @@ import {
 } from "react-native";
 import type { FormFields } from "../context/FormContext";
 import { decryptWithMasterKey, encryptWithMasterKey, getOrCreateMasterKey } from "../utils/crypto";
+import { Storage } from "../utils/storage";
 
 export default function AccountForm({
   accountKey,
@@ -116,13 +116,13 @@ export default function AccountForm({
         notes: notes.trim(),
       };
 
-      await SecureStore.setItemAsync(key, JSON.stringify(data));
+      await Storage.setItemAsync(key, JSON.stringify(data));
 
       if (!accountKey) {
-        const storedKeys = await SecureStore.getItemAsync("userAccountKeys");
+        const storedKeys = await Storage.getItemAsync("userAccountKeys");
         const keys = storedKeys ? JSON.parse(storedKeys) : [];
         if (!keys.includes(key)) keys.push(key);
-        await SecureStore.setItemAsync("userAccountKeys", JSON.stringify(keys));
+        await Storage.setItemAsync("userAccountKeys", JSON.stringify(keys));
       }
 
       resetForm();

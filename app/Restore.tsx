@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import * as SecureStore from "expo-secure-store";
 import React, { useEffect, useState } from "react";
+import { Storage } from "./utils/storage";
 import {
   ActivityIndicator,
   Alert,
@@ -19,7 +19,7 @@ export default function Restore() {
 
   useEffect(() => {
     (async () => {
-      const stored = await SecureStore.getItemAsync("github_token");
+      const stored = await Storage.getItemAsync("github_token");
       setGithubTokenExists(!!stored);
     })();
   }, []);
@@ -42,7 +42,7 @@ export default function Restore() {
         return;
       }
 
-      const token = await SecureStore.getItemAsync("github_token");
+      const token = await Storage.getItemAsync("github_token");
       if (!token) {
         setLoading(false);
         Alert.alert("No Token", "You must save a GitHub token in Settings before restoring.");
@@ -129,11 +129,11 @@ export default function Restore() {
       }
 
       for (const k of keys) {
-        await SecureStore.setItemAsync(k, JSON.stringify(accounts[k]));
+        await Storage.setItemAsync(k, JSON.stringify(accounts[k]));
       }
 
       // Update the account keys list
-      await SecureStore.setItemAsync("userAccountKeys", JSON.stringify(keys));
+      await Storage.setItemAsync("userAccountKeys", JSON.stringify(keys));
 
       setLoading(false);
       Alert.alert("Success", `Restored ${keys.length} account(s) successfully!`);

@@ -1,10 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { Link, useFocusEffect, useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import { useCallback, useLayoutEffect, useState } from "react";
 import { Pressable, Text, TouchableOpacity, View } from "react-native";
 import AccountList from "./components/AccountList";
+import { Storage } from "./utils/storage";
 
 export default function Index() {
   const navigation = useNavigation();
@@ -40,14 +40,14 @@ export default function Index() {
 
   const loadAccounts = useCallback(async () => {
     try {
-      const storedKeys = await SecureStore.getItemAsync("userAccountKeys");
+      const storedKeys = await Storage.getItemAsync("userAccountKeys");
       const keys = storedKeys ? JSON.parse(storedKeys) : [];
 
       setAccountKeys(keys);
 
       const userAccounts = await Promise.all(
         keys.map(async (key: string) => {
-          const accountData = await SecureStore.getItemAsync(key);
+          const accountData = await Storage.getItemAsync(key);
           return { key, data: accountData ? JSON.parse(accountData) : null };
         })
       );
@@ -66,10 +66,10 @@ export default function Index() {
 
   const deleteAccount = async (key: string) => {
     try {
-      await SecureStore.deleteItemAsync(key);
+      await Storage.deleteItemAsync(key);
 
       const updatedKeys = accountKeys.filter((k) => k !== key);
-      await SecureStore.setItemAsync(
+      await Storage.setItemAsync(
         "userAccountKeys",
         JSON.stringify(updatedKeys)
       );
@@ -83,13 +83,13 @@ export default function Index() {
 
   const editAccount = async (key: string, newName: string) => {
     try {
-      const storedData = await SecureStore.getItemAsync(key);
+      const storedData = await Storage.getItemAsync(key);
       if (!storedData) return;
 
       const parsed = JSON.parse(storedData);
       const updated = { ...parsed, accountName: newName };
 
-      await SecureStore.setItemAsync(key, JSON.stringify(updated));
+      await Storage.setItemAsync(key, JSON.stringify(updated));
       setAccounts((prev) =>
         prev.map((acc) => (acc.key === key ? { ...acc, data: updated } : acc))
       );
