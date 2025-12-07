@@ -10,7 +10,7 @@ import { Platform } from "react-native";
  * @param length Number of bytes to generate
  * @returns {Uint8Array} of random bytes
  */
-function getRandomBytes(length: number): Uint8Array {
+function getRandomBytes(length) {
   // Web and Electron: Use Web Crypto API
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined' && window.crypto && typeof window.crypto.getRandomValues === 'function') {

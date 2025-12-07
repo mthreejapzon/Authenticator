@@ -1,6 +1,9 @@
 {
   "name": "authenticator",
-  "main": "expo-router/entry",
+  "main": "/electron/main.js",
+  "expo": {
+    "entryPoint": "expo-router/entry"
+  },
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
@@ -80,8 +83,8 @@
   },
   "private": true,
   "build": {
-    "appId": "com.authenticator.app",
-    "productName": "Authenticator",
+    "appId": "com.narralabs.authfactory",
+    "productName": "Authfactory",
     "files": [
       "dist/**/*",
       "electron/**/*",
