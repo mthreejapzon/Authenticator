@@ -1,35 +1,40 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, protocol, net } = require('electron');
 const path = require('path');
-const keytar = require('keytar');
 const crypto = require('crypto');
+const fs = require('fs');
 
 // Use system keychain for encryption key storage
-const SERVICE_NAME = 'com.authenticator.app';
-const ACCOUNT_NAME = 'encryption-key';
 const STORE_FILE = 'authenticator-data.json';
+const KEY_FILE = 'encryption-key.enc';
 
-// Store using Node.js fs with encryption
-const fs = require('fs');
-const os = require('os');
+// Store paths
 const storePath = path.join(app.getPath('userData'), STORE_FILE);
+const keyPath = path.join(app.getPath('userData'), KEY_FILE);
 
 /**
- * Get or create encryption key from system keychain
+ * Get or create encryption key using Electron's safeStorage API
  * This uses the OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service)
  */
-async function getOrCreateEncryptionKey() {
+function getOrCreateEncryptionKey() {
   try {
-    // Try to get existing key from system keychain
-    let key = await keytar.getPassword(SERVICE_NAME, ACCOUNT_NAME);
-
-    if (!key) {
-      // Generate a new 256-bit key
-      key = crypto.randomBytes(32).toString('hex');
-
-      // Store in system keychain (OS-level security)
-      await keytar.setPassword(SERVICE_NAME, ACCOUNT_NAME, key);
-      console.log('New encryption key generated and stored in system keychain');
+    if (!safeStorage.isEncryptionAvailable()) {
+      throw new Error('Encryption is not available on this system');
     }
+
+    // Try to get existing key
+    if (fs.existsSync(keyPath)) {
+      const encryptedKey = fs.readFileSync(keyPath);
+      const decryptedKey = safeStorage.decryptString(encryptedKey);
+      return decryptedKey;
+    }
+
+    // Generate a new 256-bit key
+    const key = crypto.randomBytes(32).toString('hex');
+
+    // Encrypt and store using OS keychain
+    const encryptedKey = safeStorage.encryptString(key);
+    fs.writeFileSync(keyPath, encryptedKey);
+    console.log('New encryption key generated and stored in system keychain');
 
     return key;
   } catch (error) {
@@ -85,10 +90,10 @@ class SecureStore {
     this.initialized = false;
   }
 
-  async init() {
+  init() {
     if (this.initialized) return;
 
-    this.encryptionKey = await getOrCreateEncryptionKey();
+    this.encryptionKey = getOrCreateEncryptionKey();
 
     // Load existing data if available
     if (fs.existsSync(storePath)) {
@@ -99,6 +104,13 @@ class SecureStore {
         this.data = JSON.parse(decryptedData);
       } catch (error) {
         console.error('Error loading encrypted data:', error);
+        console.log('Starting with fresh data store');
+        // Delete corrupted file and start fresh
+        try {
+          fs.unlinkSync(storePath);
+        } catch (e) {
+          // Ignore deletion errors
+        }
         this.data = {};
       }
     }
@@ -148,7 +160,8 @@ function createWindow() {
   });
 
   // Load the Expo web app
-  const startUrl = process.env.ELECTRON_START_URL || `file://${path.join(__dirname, '../dist/index.html')}`;
+  // Use custom protocol for SPA routing - load from root to fix relative paths
+  const startUrl = process.env.ELECTRON_START_URL || 'app://./';
 
   mainWindow.loadURL(startUrl);
 
@@ -157,14 +170,38 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   }
 
+  // Log any load failures
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('Failed to load:', validatedURL, errorCode, errorDescription);
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
-// App lifecycle - initialize store before creating window
-app.whenReady().then(async () => {
-  await store.init();
+// App ready handler
+app.whenReady().then(() => {
+  // Register custom protocol to serve the SPA
+  protocol.handle('app', (request) => {
+    let filePath = request.url.replace('app://', '');
+
+    // Remove query strings and hashes
+    filePath = filePath.split('?')[0].split('#')[0];
+
+    // Remove any leading slashes
+    filePath = filePath.replace(/^\/+/, '');
+
+    // Default to index.html for SPA routing (only if no extension and not an asset path)
+    if (!filePath || filePath === '' || (!path.extname(filePath) && !filePath.startsWith('_expo/'))) {
+      filePath = 'index.html';
+    }
+
+    const fullPath = path.join(__dirname, '../dist', filePath);
+    return net.fetch('file://' + fullPath);
+  });
+
+  store.init();
   createWindow();
 });
 
