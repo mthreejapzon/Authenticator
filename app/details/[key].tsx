@@ -1,21 +1,23 @@
 import { RelativePathString, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import * as OTPAuth from "otpauth";
-import { Storage, Clipboard } from "../utils/storage";
 import { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Easing,
+  Platform,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import * as icons from "simple-icons";
 import AccountForm from "../components/AccountForm";
 import { useForm } from "../context/FormContext";
-import { decryptWithMasterKey, getOrCreateMasterKey } from "../utils/crypto";
+import { decryptText } from "../utils/crypto";
+import { Clipboard, Storage } from "../utils/storage";
 
 export default function DetailsScreen() {
   const router = useRouter();
@@ -45,12 +47,12 @@ export default function DetailsScreen() {
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [decryptedPassword, setDecryptedPassword] = useState<string>("");
   const [notesText, setNotesText] = useState<string>("");
+  const [decryptionError, setDecryptionError] = useState<string | null>(null);
 
   const progress = useRef(new Animated.Value(1)).current;
   const highlightAnim = useRef(new Animated.Value(0)).current;
   const [highlightField, setHighlightField] = useState<string | null>(null);
 
-  // Animate progress bar smoothly
   const startProgressBar = (remainingSeconds: number) => {
     progress.stopAnimation();
     progress.setValue(remainingSeconds / otpPeriod);
@@ -79,74 +81,152 @@ export default function DetailsScreen() {
   };
 
   useEffect(() => {
-    if (!key) return router.replace("/");
+    if (!key) {
+      router.replace("/");
+      return;
+    }
 
     (async () => {
-      const storedData = await Storage.getItemAsync(key as string);
-      if (!storedData) {
-        router.replace("/");
-        return;
-      }
-
-      const parsed = JSON.parse(storedData);
-      
-      // Decrypt password using master key
-      const masterKey = await getOrCreateMasterKey();
-      const decryptedPw = await decryptWithMasterKey(parsed.password, masterKey);
-      
-      setData(parsed);
-      setFormData(parsed);
-      setNotesText(parsed.notes || "");      
-      setDecryptedPassword(decryptedPw);
-
-      if (!parsed.value) return;
-
       try {
-        const otpDetails = OTPAuth.URI.parse(parsed.value);
-        if (otpDetails instanceof OTPAuth.TOTP) {
-          const totp = otpDetails;
-          setOtpPeriod(totp.period);
+        const storedData = await Storage.getItemAsync(key as string);
+        if (!storedData) {
+          router.replace("/");
+          return;
+        }
 
-          const updateOtp = () => {
-            const code = totp.generate();
-            setOtpCode(code);
+        const parsed = JSON.parse(storedData);
 
-            const epoch = Math.floor(Date.now() / 1000);
-            const remaining = totp.period - (epoch % totp.period);
-            startProgressBar(remaining);
-          };
+        // Get GitHub token for decryption
+        const pat = await Storage.getItemAsync("github_token");
+        
+        // Validate PAT more thoroughly
+        if (!pat || pat.trim().length === 0) {
+          console.warn("⚠️ Missing GitHub token");
+          setDecryptionError("GitHub token not configured");
+          
+          // Show data without decryption
+          setData(parsed);
+          setFormData(parsed);
+          setNotesText(parsed.notes || "");
+          setDecryptedPassword("");
+          
+          // Show alert to user
+          const message = "GitHub token not found. Please add your GitHub token in Settings to decrypt passwords and OTP codes.";
+          if (Platform.OS === 'web') {
+            window.alert(message);
+          } else {
+            Alert.alert("Token Required", message);
+          }
+          return;
+        }
 
-          updateOtp();
+        let decryptedPw = "";
+        let decryptedOtpValue = parsed.value;
+        let hasDecryptionError = false;
 
-          navigation.setOptions({
-            headerTitle: parsed.accountName || totp.issuer || "Account Details",
-          });
+        // Try to decrypt password
+        if (parsed.password) {
+          try {
+            decryptedPw = await decryptText(parsed.password, pat);
+            console.log("✅ Password decrypted successfully");
+          } catch (e) {
+            console.error("❌ Password decrypt failed:", e);
+            hasDecryptionError = true;
+            setDecryptionError("Failed to decrypt password. Please check your GitHub token in Settings.");
+            decryptedPw = "";
+          }
+        }
 
-          const interval = setInterval(updateOtp, 1000);
-          return () => clearInterval(interval);
+        // Try to decrypt OTP secret
+        if (parsed.value) {
+          try {
+            decryptedOtpValue = await decryptText(parsed.value, pat);
+            console.log("✅ OTP secret decrypted successfully");
+          } catch (e) {
+            console.error("❌ OTP decrypt failed:", e);
+            hasDecryptionError = true;
+            setDecryptionError("Failed to decrypt OTP secret. Please check your GitHub token in Settings.");
+            decryptedOtpValue = "";
+          }
+        }
+
+        // Show error alert if decryption failed
+        if (hasDecryptionError) {
+          const message = "Decryption failed. This usually means:\n\n1. Your GitHub token is incorrect\n2. The data was encrypted with a different token\n3. The backup data is corrupted\n\nPlease verify your GitHub token in Settings.";
+          if (Platform.OS === 'web') {
+            window.alert(message);
+          } else {
+            Alert.alert("Decryption Error", message);
+          }
+        }
+
+        setData({ ...parsed, value: decryptedOtpValue });
+        setFormData(parsed);
+        setNotesText(parsed.notes || "");
+        setDecryptedPassword(decryptedPw);
+
+        // Generate OTP if we have a secret
+        if (decryptedOtpValue) {
+          try {
+            const otpDetails = OTPAuth.URI.parse(decryptedOtpValue);
+
+            if (otpDetails instanceof OTPAuth.TOTP) {
+              const totp = otpDetails;
+              setOtpPeriod(totp.period);
+
+              const updateOtp = () => {
+                const code = totp.generate();
+                setOtpCode(code);
+
+                const epoch = Math.floor(Date.now() / 1000);
+                const remaining = totp.period - (epoch % totp.period);
+                startProgressBar(remaining);
+              };
+
+              updateOtp();
+
+              navigation.setOptions({
+                headerTitle: parsed.accountName || totp.issuer || "Account Details",
+              });
+
+              const interval = setInterval(updateOtp, 1000);
+              return () => clearInterval(interval);
+            } else {
+              const hotp = otpDetails as OTPAuth.HOTP;
+              setOtpPeriod(0);
+              setOtpCode(hotp.generate());
+              navigation.setOptions({
+                headerTitle: parsed.accountName || hotp.issuer || "Account Details",
+              });
+            }
+          } catch (err) {
+            console.error("❌ Invalid OTP URI:", err);
+            setOtpCode("Invalid OTP");
+            setDecryptionError("Invalid OTP configuration");
+          }
         } else {
-          // HOTP
-          const hotp = otpDetails as OTPAuth.HOTP;
-          setOtpPeriod(0);
-          setOtpCode(hotp.generate());
-          navigation.setOptions({
-            headerTitle: parsed.accountName || hotp.issuer || "Account Details",
-          });
+          // No OTP secret available
+          setOtpCode("N/A");
         }
       } catch (err) {
-        console.error("Invalid OTP URI:", err);
-        setOtpCode("Invalid");
+        console.error("❌ Error loading account details:", err);
+        const message = `Failed to load account: ${err instanceof Error ? err.message : 'Unknown error'}`;
+        if (Platform.OS === 'web') {
+          window.alert(message);
+        } else {
+          Alert.alert("Error", message);
+        }
+        router.replace("/");
       }
     })();
   }, [key]);
 
-  // 🔥 FIXED: Header configuration with back button
+  // Header config
   useEffect(() => {
     navigation.setOptions({
-      // Use headerBackTitle instead of headerLeft to keep the back arrow
       headerBackTitle: "Accounts",
       headerTitle: data?.accountName || "Account Details",
-      headerRight: () => (
+      headerRight: () =>
         !isEditing ? (
           <TouchableOpacity onPress={() => setIsEditing(true)} activeOpacity={0.8}>
             <View style={{ backgroundColor: "#007AFF", paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 }}>
@@ -159,8 +239,7 @@ export default function DetailsScreen() {
               <Text style={{ color: "#333", fontWeight: "600" }}>Cancel</Text>
             </View>
           </TouchableOpacity>
-        )
-      ),
+        ),
     });
   }, [navigation, isEditing, data?.accountName]);
 
@@ -201,6 +280,24 @@ export default function DetailsScreen() {
       style={{ flex: 1, backgroundColor: "#fff", padding: 20 }}
       contentContainerStyle={{ paddingBottom: 50 }}
     >
+      {/* Decryption Error Banner */}
+      {decryptionError && (
+        <View
+          style={{
+            backgroundColor: "#fff3cd",
+            borderRadius: 8,
+            padding: 12,
+            marginBottom: 16,
+            borderLeftWidth: 4,
+            borderLeftColor: "#ff9800",
+          }}
+        >
+          <Text style={{ color: "#856404", fontWeight: "600", fontSize: 14 }}>
+            ⚠️ {decryptionError}
+          </Text>
+        </View>
+      )}
+
       {/* Account Name */}
       <Animated.View
         style={{
@@ -302,11 +399,11 @@ export default function DetailsScreen() {
           </Text>
         </Animated.View>
       </TouchableOpacity>
-      {data?.username && (
+      {data?.username ? (
         <Text style={{ fontSize: 12, color: "#666", textAlign: "right" }}>
           Tap to copy
         </Text>
-      )}
+      ) : null}
 
       {/* Password */}
       <Text
@@ -322,6 +419,7 @@ export default function DetailsScreen() {
       <TouchableOpacity
         onPress={() => copyToClipboard(decryptedPassword || "", "password")}
         activeOpacity={0.8}
+        disabled={!decryptedPassword}
       >
         <Animated.View
           style={{
@@ -344,9 +442,11 @@ export default function DetailsScreen() {
                 ? showPassword
                   ? decryptedPassword
                   : "••••••••"
+                : decryptionError
+                ? "Failed to decrypt"
                 : "N/A"}
             </Text>
-            {data?.password ? (
+            {decryptedPassword ? (
               <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                 <Text
                   style={{
@@ -362,14 +462,14 @@ export default function DetailsScreen() {
           </View>
         </Animated.View>
       </TouchableOpacity>
-      {data?.password && (
+      {decryptedPassword ? (
         <Text style={{ fontSize: 12, color: "#666", textAlign: "right" }}>
           Tap to copy
         </Text>
-      )}
+      ) : null}
 
       {/* OTP Code */}
-      {data?.value && (
+      {data?.value ? (
         <>
           <Text
             style={{
@@ -384,6 +484,7 @@ export default function DetailsScreen() {
           <TouchableOpacity
             onPress={() => copyToClipboard(otpCode, "otp")}
             activeOpacity={0.8}
+            disabled={otpCode === "N/A" || otpCode === "Invalid OTP" || otpCode === "Generating..."}
           >
             <Animated.View
               style={{
@@ -399,7 +500,7 @@ export default function DetailsScreen() {
                   fontSize: 32,
                   letterSpacing: 3,
                   fontWeight: "bold",
-                  color: "#000",
+                  color: otpCode === "Invalid OTP" || otpCode === "N/A" ? "#999" : "#000",
                 }}
               >
                 {otpCode}
@@ -408,37 +509,41 @@ export default function DetailsScreen() {
           </TouchableOpacity>
 
           {/* Progress Bar */}
-          <View
-            style={{
-              height: 6,
-              backgroundColor: "#ddd",
-              borderRadius: 4,
-              overflow: "hidden",
-              marginTop: 8,
-            }}
-          >
-            <Animated.View
-              style={{
-                height: "100%",
-                width: barWidth,
-                backgroundColor: "#007AFF",
-                borderRadius: 4,
-              }}
-            />
-          </View>
+          {otpCode !== "N/A" && otpCode !== "Invalid OTP" && otpCode !== "Generating..." && (
+            <>
+              <View
+                style={{
+                  height: 6,
+                  backgroundColor: "#ddd",
+                  borderRadius: 4,
+                  overflow: "hidden",
+                  marginTop: 8,
+                }}
+              >
+                <Animated.View
+                  style={{
+                    height: "100%",
+                    width: barWidth,
+                    backgroundColor: "#007AFF",
+                    borderRadius: 4,
+                  }}
+                />
+              </View>
 
-          <Text
-            style={{
-              fontSize: 12,
-              textAlign: "center",
-              color: "#666",
-              marginTop: 4,
-            }}
-          >
-            Refreshes every {otpPeriod}s • Tap any field to copy
-          </Text>
+              <Text
+                style={{
+                  fontSize: 12,
+                  textAlign: "center",
+                  color: "#666",
+                  marginTop: 4,
+                }}
+              >
+                Refreshes every {otpPeriod}s • Tap any field to copy
+              </Text>
+            </>
+          )}
         </>
-      )}
+      ) : null}
 
       {/* Notes */}
       <Text
@@ -466,6 +571,7 @@ export default function DetailsScreen() {
           placeholderTextColor="#999"
           multiline
           numberOfLines={4}
+          editable={false}
           style={{
             minHeight: 88,
             textAlignVertical: "top",

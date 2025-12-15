@@ -1,11 +1,12 @@
 import CryptoJS from "crypto-js";
-import { Storage } from "./storage";
 import { getRandomBytes } from "./cryptoPolyfill";
+import { Storage } from "./storage";
 
 /**
  * Storage key for the master encryption key (used for backups)
  */
 const MASTER_KEY_STORAGE_KEY = "encryptionMasterKey";
+const GITHUB_TOKEN_KEY = "github_token";
 
 /**
  * Convert bytes → CryptoJS WordArray
@@ -30,7 +31,7 @@ function toShortToken(input: string): string {
  * Derive AES key from PAT.
  */
 function keyFromPAT(pat: string) {
-  if (!pat || pat.length < 10) {
+  if (!pat || pat.trim().length === 0) {
     throw new Error("PAT is required for encryption/decryption.");
   }
   return CryptoJS.SHA256(pat); // 256-bit key
@@ -43,6 +44,10 @@ export async function encryptText(
   plainText: string,
   pat: string
 ): Promise<string> {
+  if (!plainText) {
+    throw new Error("Cannot encrypt empty text");
+  }
+  
   const key = keyFromPAT(pat);
 
   const ivBytes = getRandomBytes(16);
@@ -61,7 +66,15 @@ export async function encryptText(
 
   // Store inside secure store only for faster local lookup
   const token = toShortToken(fullCipher);
-  await Storage.setItemAsync(`cipher_${token}`, fullCipher);
+  
+  try {
+    await Storage.setItemAsync(`cipher_${token}`, fullCipher);
+    console.log(`✅ Stored cipher with token: cipher_${token}`);
+  } catch (err) {
+    console.error("Failed to store cipher token:", err);
+    // Return full cipher if storage fails
+    return fullCipher;
+  }
 
   return token;
 }
@@ -74,42 +87,102 @@ export async function decryptText(
   cipherText: string,
   pat: string
 ): Promise<string> {
+  if (!cipherText || cipherText.trim().length === 0) {
+    throw new Error("Cannot decrypt empty ciphertext");
+  }
+
+  if (!pat || pat.trim().length === 0) {
+    throw new Error("PAT is required for decryption");
+  }
+
   const key = keyFromPAT(pat);
+  let actualCipher = cipherText;
 
   // 1. If it's a short token (not starting with v2:)
   if (!cipherText.startsWith("v2:")) {
-    const stored = await Storage.getItemAsync(`cipher_${cipherText}`);
-    if (stored) {
-      cipherText = stored;
-    } else {
-      // Maybe plaintext or malformed history value
-      if (!cipherText.includes(":")) {
-        return cipherText;
+    console.log(`🔍 Attempting to resolve token: ${cipherText.substring(0, 20)}...`);
+    
+    try {
+      const stored = await Storage.getItemAsync(`cipher_${cipherText}`);
+      
+      if (stored) {
+        console.log("✅ Token resolved from storage");
+        actualCipher = stored;
+      } else {
+        console.warn("⚠️ Token not found in storage");
+        
+        // Check if it might be a direct cipher text that doesn't have v2: prefix
+        if (cipherText.includes(":") && cipherText.split(":").length === 3) {
+          console.log("🔄 Treating as direct cipher without v2: prefix");
+          actualCipher = `v2:${cipherText}`;
+        } else if (!cipherText.includes(":")) {
+          // Might be plaintext from old data
+          console.log("⚠️ Appears to be plaintext, returning as-is");
+          return cipherText;
+        } else {
+          throw new Error(
+            `Cipher token not found in storage. The data may have been encrypted on a different device or the local cache was cleared.`
+          );
+        }
       }
+    } catch (err) {
+      console.error("❌ Error resolving token:", err);
+      throw new Error(
+        `Failed to resolve cipher token: ${err instanceof Error ? err.message : "Unknown error"}`
+      );
     }
   }
 
   // Must be v2 format
-  if (!cipherText.startsWith("v2:")) {
-    throw new Error("Unsupported ciphertext format. Expected 'v2:'.");
+  if (!actualCipher.startsWith("v2:")) {
+    throw new Error(
+      `Unsupported ciphertext format. Expected 'v2:' prefix but got: ${actualCipher.substring(0, 20)}...`
+    );
   }
 
-  const [, ivB64, ctB64] = cipherText.split(":");
-  const iv = CryptoJS.enc.Base64.parse(ivB64);
+  try {
+    const parts = actualCipher.split(":");
+    
+    if (parts.length !== 3) {
+      throw new Error(
+        `Malformed cipher - expected 3 parts (v2:iv:ct) but got ${parts.length}`
+      );
+    }
 
-  const decrypted = CryptoJS.AES.decrypt(ctB64, key, {
-    iv,
-    mode: CryptoJS.mode.CBC,
-    padding: CryptoJS.pad.Pkcs7,
-  });
+    const [version, ivB64, ctB64] = parts;
 
-  const result = decrypted.toString(CryptoJS.enc.Utf8);
+    if (!ivB64 || !ctB64) {
+      throw new Error("Missing IV or ciphertext component");
+    }
 
-  if (!result) {
-    throw new Error("Decryption failed — incorrect PAT or corrupted backup.");
+    const iv = CryptoJS.enc.Base64.parse(ivB64);
+
+    const decrypted = CryptoJS.AES.decrypt(ctB64, key, {
+      iv,
+      mode: CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7,
+    });
+
+    const result = decrypted.toString(CryptoJS.enc.Utf8);
+
+    if (!result || result.length === 0) {
+      throw new Error(
+        "Decryption failed — incorrect PAT or corrupted backup. The GitHub token used for decryption must match the one used for encryption."
+      );
+    }
+
+    console.log("✅ Decryption successful");
+    return result;
+  } catch (err) {
+    if (err instanceof Error) {
+      // Re-throw our custom errors
+      if (err.message.includes("Decryption failed")) {
+        throw err;
+      }
+      throw new Error(`Decryption error: ${err.message}`);
+    }
+    throw new Error("Decryption failed with unknown error");
   }
-
-  return result;
 }
 
 // ============================================================================
@@ -117,10 +190,22 @@ export async function decryptText(
 // ============================================================================
 
 /**
- * Get or create a base64 master key stored in SecureStore.
- * This key is used for encrypting/decrypting backup files.
+ * 🔥 NEW: Get or create a master key DERIVED FROM GITHUB TOKEN
+ * This ensures the same master key on all devices with the same token.
  */
 export async function getOrCreateMasterKey(): Promise<string> {
+  // Try to get GitHub token first
+  const githubToken = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
+  
+  if (githubToken && githubToken.trim().length > 0) {
+    // Derive master key from GitHub token (consistent across devices)
+    console.log("✅ Deriving master key from GitHub token");
+    const derived = CryptoJS.SHA256(githubToken + "_backup_master_key");
+    return CryptoJS.enc.Base64.stringify(derived);
+  }
+  
+  // Fallback: use device-specific key (old behavior)
+  console.log("⚠️ No GitHub token, using device-specific master key");
   const existing = await Storage.getItemAsync(MASTER_KEY_STORAGE_KEY);
   if (existing) return existing;
 
@@ -148,10 +233,13 @@ export async function encryptWithMasterKey(
   plainText: string,
   masterKeyB64?: string
 ): Promise<string> {
+  if (!plainText) {
+    throw new Error("Cannot encrypt empty text");
+  }
+
   // If no master key provided, get/create it
-  const key = masterKeyB64 
-    ? CryptoJS.SHA256(masterKeyB64)
-    : CryptoJS.SHA256(await getOrCreateMasterKey());
+  const keyBase = masterKeyB64 || (await getOrCreateMasterKey());
+  const key = CryptoJS.SHA256(keyBase);
 
   const ivBytes = getRandomBytes(16);
   const iv = toWordArray(ivBytes);
@@ -174,52 +262,84 @@ export async function decryptWithMasterKey(
   cipherText: string,
   masterKeyB64?: string
 ): Promise<string> {
-  // 🔥 FIX: Handle both old JSON wrapper format and new raw format
-  let cipher = cipherText;
+  if (!cipherText || cipherText.trim().length === 0) {
+    throw new Error("Cannot decrypt empty ciphertext");
+  }
+
+  // Handle both old JSON wrapper format and new raw format
+  let cipher = cipherText.trim();
   
   // Check if it's wrapped in JSON format
-  if (cipherText.trim().startsWith("{")) {
+  if (cipher.startsWith("{")) {
     try {
-      const parsed = JSON.parse(cipherText);
-      cipher = parsed.cipher || cipherText;
+      const parsed = JSON.parse(cipher);
+      cipher = parsed.cipher || cipher;
     } catch (e) {
       // If JSON parse fails, assume it's raw cipher
-      cipher = cipherText;
+      console.log("Not JSON format, treating as raw cipher");
     }
   }
   
   if (!cipher.startsWith("v2:")) {
-    throw new Error("Unsupported backup format. Expected 'v2:' prefix.");
+    throw new Error(
+      `Unsupported backup format. Expected 'v2:' prefix but got: ${cipher.substring(0, 20)}...`
+    );
   }
 
   // If no master key provided, get it from storage
-  const key = masterKeyB64
-    ? CryptoJS.SHA256(masterKeyB64)
-    : CryptoJS.SHA256(await getOrCreateMasterKey());
+  const keyBase = masterKeyB64 || (await getOrCreateMasterKey());
+  const key = CryptoJS.SHA256(keyBase);
 
-  const [, ivB64, ctB64] = cipher.split(":");
-  const iv = CryptoJS.enc.Base64.parse(ivB64);
-
-  const decrypted = CryptoJS.AES.decrypt(ctB64, key, {
-    iv,
-    mode: CryptoJS.mode.CBC,
-    padding: CryptoJS.pad.Pkcs7,
-  });
-
-  const result = decrypted.toString(CryptoJS.enc.Utf8);
-
-  if (!result) {
-    throw new Error("Decryption failed — possibly wrong master key or corrupted data.");
+  const parts = cipher.split(":");
+  
+  if (parts.length !== 3) {
+    throw new Error(
+      `Malformed cipher - expected 3 parts (v2:iv:ct) but got ${parts.length}`
+    );
   }
 
-  return result;
+  const [version, ivB64, ctB64] = parts;
+  
+  if (!ivB64 || !ctB64) {
+    throw new Error("Malformed cipher text - missing IV or ciphertext");
+  }
+
+  try {
+    const iv = CryptoJS.enc.Base64.parse(ivB64);
+
+    const decrypted = CryptoJS.AES.decrypt(ctB64, key, {
+      iv,
+      mode: CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7,
+    });
+
+    const result = decrypted.toString(CryptoJS.enc.Utf8);
+
+    if (!result || result.length === 0) {
+      throw new Error(
+        "Decryption failed. Make sure you're using the same GitHub token that was used to create the backup."
+      );
+    }
+
+    console.log("✅ Master key decryption successful");
+    return result;
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("Decryption failed")) {
+      throw err;
+    }
+    throw new Error(
+      `Master key decryption failed: ${err instanceof Error ? err.message : "Unknown error"}`
+    );
+  }
 }
+
 /**
  * Delete the master key from SecureStore.
  * WARNING: This will make all existing backups unrecoverable!
  */
 export async function deleteMasterKey(): Promise<void> {
   await Storage.deleteItemAsync(MASTER_KEY_STORAGE_KEY);
+  console.log("🗑️ Master key deleted");
 }
 
 /**
@@ -228,4 +348,32 @@ export async function deleteMasterKey(): Promise<void> {
 export async function hasMasterKey(): Promise<boolean> {
   const key = await Storage.getItemAsync(MASTER_KEY_STORAGE_KEY);
   return key !== null;
+}
+
+/**
+ * Helper function to validate if a token looks like a valid GitHub token
+ */
+export function isValidGitHubToken(token: string): boolean {
+  if (!token || token.trim().length === 0) {
+    return false;
+  }
+  
+  // GitHub tokens are typically 40+ characters
+  // Classic tokens start with 'ghp_', fine-grained start with 'github_pat_'
+  const trimmed = token.trim();
+  
+  if (trimmed.length < 20) {
+    return false;
+  }
+  
+  // Check for common GitHub token prefixes
+  const hasValidPrefix = 
+    trimmed.startsWith("ghp_") || 
+    trimmed.startsWith("github_pat_") ||
+    trimmed.startsWith("gho_") ||
+    trimmed.startsWith("ghu_") ||
+    trimmed.startsWith("ghs_") ||
+    trimmed.startsWith("ghr_");
+  
+  return hasValidPrefix || trimmed.length >= 40;
 }
