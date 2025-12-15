@@ -8,12 +8,12 @@ import { Platform } from "react-native";
 /**
  * Generate cryptographically secure random bytes
  * @param length Number of bytes to generate
- * @returns Uint8Array of random bytes
+ * @returns {Uint8Array} of random bytes
  */
 function getRandomBytes(length: number): Uint8Array {
   // Web and Electron: Use Web Crypto API
   if (Platform.OS === 'web') {
-    if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
+    if (typeof window !== 'undefined' && window.crypto && typeof window.crypto.getRandomValues === 'function') {
       const bytes = new Uint8Array(length);
       window.crypto.getRandomValues(bytes);
       return bytes;

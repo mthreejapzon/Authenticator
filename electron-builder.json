@@ -1,0 +1,41 @@
+{
+  "appId": "com.narralabs.authfactory",
+  "productName": "Authfactory",
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "assets/**/*"
+  ],
+  "asarUnpack": [
+    "**/*.node"
+  ],
+  "extraMetadata": {
+    "main": "electron/main.js"
+  },
+  "directories": {
+    "buildResources": "assets"
+  },
+  "mac": {
+    "category": "public.app-category.utilities",
+    "target": [
+      "dmg",
+      "zip"
+    ],
+    "icon": "assets/icon.png"
+  },
+  "win": {
+    "target": [
+      "nsis",
+      "portable"
+    ],
+    "icon": "assets/icon.png"
+  },
+  "linux": {
+    "target": [
+      "AppImage",
+      "deb"
+    ],
+    "icon": "assets/icon.png",
+    "category": "Utility"
+  }
+}
