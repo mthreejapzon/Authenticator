@@ -98,10 +98,6 @@ export default function AccountListItem({
               pathname: "/details/[key]",
               params: {
                 key: account.key,
-                accountName: providerName,
-                username: account.data?.username || "N/A",
-                password: account.data?.password || "",
-                value: account.data?.value || "",
               },
             })
           }

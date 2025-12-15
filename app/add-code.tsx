@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
 import * as OTPAuth from 'otpauth';
+import { Storage } from './utils/storage';
 import { useState } from 'react';
 import { Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Dropdown } from 'react-native-element-dropdown';
@@ -48,15 +48,15 @@ export default function AddCode() {
     
     // Store the new key in an array of user account keys
 
-    await SecureStore.getItemAsync('userAccountKeys').then(async(storedKeys) => {
+    await Storage.getItemAsync('userAccountKeys').then(async(storedKeys) => {
       const updatedKeys = storedKeys ? JSON.parse(storedKeys) : [];
       updatedKeys.push(storageKey);
 
-      await SecureStore.setItemAsync('userAccountKeys', JSON.stringify(updatedKeys));
+      await Storage.setItemAsync('userAccountKeys', JSON.stringify(updatedKeys));
     });
-    
+
     // Store the actual auth data using the generated key
-    await SecureStore.setItemAsync(storageKey, JSON.stringify(authData));
+    await Storage.setItemAsync(storageKey, JSON.stringify(authData));
   }
 
   return (

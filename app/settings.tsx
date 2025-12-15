@@ -1,4 +1,3 @@
-import * as SecureStore from "expo-secure-store";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import {
@@ -6,6 +5,7 @@ import {
   encryptWithMasterKey,
   getOrCreateMasterKey
 } from './utils/crypto';
+import { Storage } from "./utils/storage";
 
 /**
  * Keys used in SecureStore
@@ -35,10 +35,10 @@ export default function SettingsScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const t = await SecureStore.getItemAsync(GITHUB_TOKEN_KEY);
-        const g = await SecureStore.getItemAsync(BACKUP_GIST_ID_KEY);
-        const last = await SecureStore.getItemAsync(LAST_BACKUP_KEY);
-        const hist = await SecureStore.getItemAsync(BACKUP_HISTORY_KEY);
+        const t = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
+        const g = await Storage.getItemAsync(BACKUP_GIST_ID_KEY);
+        const last = await Storage.getItemAsync(LAST_BACKUP_KEY);
+        const hist = await Storage.getItemAsync(BACKUP_HISTORY_KEY);
 
         if (t) {
           setHasToken(true);
@@ -66,7 +66,7 @@ export default function SettingsScreen() {
         Alert.alert("Missing token", "Please enter your GitHub Personal Access Token (with gist scope).");
         return;
       }
-      await SecureStore.setItemAsync(GITHUB_TOKEN_KEY, githubToken.trim());
+      await Storage.setItemAsync(GITHUB_TOKEN_KEY, githubToken.trim());
       setHasToken(true);
       setMaskedToken("••••••••" + githubToken.slice(-4));
       setGithubToken("");
@@ -93,12 +93,12 @@ export default function SettingsScreen() {
           onPress: async () => {
             try {
               // Remove GitHub token
-              await SecureStore.deleteItemAsync(GITHUB_TOKEN_KEY);
+              await Storage.deleteItemAsync(GITHUB_TOKEN_KEY);
               
               // Clear all backup metadata
-              await SecureStore.deleteItemAsync(BACKUP_GIST_ID_KEY);
-              await SecureStore.deleteItemAsync(LAST_BACKUP_KEY);
-              await SecureStore.deleteItemAsync(BACKUP_HISTORY_KEY);
+              await Storage.deleteItemAsync(BACKUP_GIST_ID_KEY);
+              await Storage.deleteItemAsync(LAST_BACKUP_KEY);
+              await Storage.deleteItemAsync(BACKUP_HISTORY_KEY);
               
               // Update state
               setHasToken(false);
@@ -125,7 +125,7 @@ export default function SettingsScreen() {
     setStatus("Collecting accounts...");
     try {
       // 1) Load keys
-      const keysString = await SecureStore.getItemAsync(USER_ACCOUNT_KEYS);
+      const keysString = await Storage.getItemAsync(USER_ACCOUNT_KEYS);
       const keys: string[] = keysString ? JSON.parse(keysString) : [];
 
       if (!keys || keys.length === 0) {
@@ -138,7 +138,7 @@ export default function SettingsScreen() {
       // 2) Read all account data
       const accounts: Record<string, any> = {};
       for (const key of keys) {
-        const raw = await SecureStore.getItemAsync(key);
+        const raw = await Storage.getItemAsync(key);
         if (raw) {
           try {
             accounts[key] = JSON.parse(raw);
@@ -181,7 +181,7 @@ export default function SettingsScreen() {
       }
       setStatus("Uploading to GitHub Gist...");
 
-      const token = (await SecureStore.getItemAsync(GITHUB_TOKEN_KEY)) || "";
+      const token = (await Storage.getItemAsync(GITHUB_TOKEN_KEY)) || "";
       const isUpdate = Boolean(gistId);
       const url = isUpdate ? `https://api.github.com/gists/${gistId}` : `https://api.github.com/gists`;
       const method = isUpdate ? "PATCH" : "POST";
@@ -214,8 +214,8 @@ export default function SettingsScreen() {
       const newGistId: string = data.id;
       
       // Save gist id and last backup timestamp and history
-      await SecureStore.setItemAsync(BACKUP_GIST_ID_KEY, newGistId);
-      await SecureStore.setItemAsync(LAST_BACKUP_KEY, exportedAt);
+      await Storage.setItemAsync(BACKUP_GIST_ID_KEY, newGistId);
+      await Storage.setItemAsync(LAST_BACKUP_KEY, exportedAt);
       setGistId(newGistId);
       setLastBackup(exportedAt);
 
@@ -227,7 +227,7 @@ export default function SettingsScreen() {
       };      
       const newHistory = [histItem, ...history].slice(0, 20);
       setHistory(newHistory);
-      await SecureStore.setItemAsync(BACKUP_HISTORY_KEY, JSON.stringify(newHistory));
+      await Storage.setItemAsync(BACKUP_HISTORY_KEY, JSON.stringify(newHistory));
 
       setStatus("Backup successful.");
       Alert.alert("Backup uploaded", `Gist ID: ${newGistId}`);
@@ -252,7 +252,7 @@ export default function SettingsScreen() {
         return;
       }
 
-      const token = await SecureStore.getItemAsync(GITHUB_TOKEN_KEY);
+      const token = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
       if (!token) {
         Alert.alert("Missing token", "GitHub token not found.");
         setIsWorking(false);
@@ -293,7 +293,7 @@ export default function SettingsScreen() {
       const latestGistId = latest.id;
 
       // Save gist ID for future direct restores
-      await SecureStore.setItemAsync(BACKUP_GIST_ID_KEY, latestGistId);
+      await Storage.setItemAsync(BACKUP_GIST_ID_KEY, latestGistId);
       setGistId(latestGistId);
 
       // Fetch encrypted backup file
@@ -356,9 +356,9 @@ export default function SettingsScreen() {
       // Restore accounts
       const keys = Object.keys(accounts);
       for (const k of keys) {
-        await SecureStore.setItemAsync(k, JSON.stringify(accounts[k]));
+        await Storage.setItemAsync(k, JSON.stringify(accounts[k]));
       }
-      await SecureStore.setItemAsync(USER_ACCOUNT_KEYS, JSON.stringify(keys));
+      await Storage.setItemAsync(USER_ACCOUNT_KEYS, JSON.stringify(keys));
 
       setStatus("Restore complete!");
       Alert.alert("Restore complete", `Restored ${keys.length} account(s).`);

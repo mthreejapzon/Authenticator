@@ -8,7 +8,13 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "export:web": "expo export --platform web",
+    "electron:dev": "concurrently \"wait-on http://localhost:8081 && NODE_ENV=development ELECTRON_START_URL=http://localhost:8081 electron electron/main.js\" \"expo start --web --port 8081\"",
+    "electron:build": "npm run export:web && electron-builder",
+    "electron:build:mac": "npm run export:web && electron-builder --mac",
+    "electron:build:win": "npm run export:web && electron-builder --win",
+    "electron:build:linux": "npm run export:web && electron-builder --linux"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -16,7 +22,8 @@
     "@react-navigation/elements": "^2.3.8",
     "@react-navigation/native": "^7.1.6",
     "crypto-js": "^4.2.0",
-    "eas-cli": "^16.18.1",
+    "eas-cli": "^16.28.0",
+    "electron-store": "^11.0.2",
     "expo": "^54.0.19",
     "expo-blur": "~15.0.7",
     "expo-camera": "~17.0.8",
@@ -37,6 +44,7 @@
     "expo-system-ui": "~6.0.7",
     "expo-updates": "~29.0.11",
     "expo-web-browser": "~15.0.7",
+    "keytar": "^7.9.0",
     "otpauth": "^9.4.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
@@ -55,9 +63,55 @@
     "@babel/core": "^7.25.2",
     "@types/crypto-js": "^4.2.2",
     "@types/react": "~19.1.0",
+    "concurrently": "^9.2.1",
+    "electron": "^39.2.5",
+    "electron-builder": "^26.0.12",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~9.2.0",
-    "typescript": "~5.8.3"
+    "typescript": "~5.8.3",
+    "wait-on": "^9.0.3"
   },
-  "private": true
+  "engines": {
+    "node": ">=20.19.4",
+    "npm": ">=10.5.2"
+  },
+  "overrides": {
+    "node-forge": "1.3.3"
+  },
+  "private": true,
+  "build": {
+    "appId": "com.authenticator.app",
+    "productName": "Authenticator",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "assets/**/*"
+    ],
+    "directories": {
+      "buildResources": "assets"
+    },
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "assets/icon.png",
+      "category": "Utility"
+    }
+  }
 }

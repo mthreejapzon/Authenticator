@@ -1,7 +1,6 @@
-import * as Clipboard from "expo-clipboard";
 import { RelativePathString, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import * as OTPAuth from "otpauth";
+import { Storage, Clipboard } from "../utils/storage";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -83,7 +82,7 @@ export default function DetailsScreen() {
     if (!key) return router.replace("/");
 
     (async () => {
-      const storedData = await SecureStore.getItemAsync(key as string);
+      const storedData = await Storage.getItemAsync(key as string);
       if (!storedData) {
         router.replace("/");
         return;
