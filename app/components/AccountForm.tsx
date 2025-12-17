@@ -3,6 +3,7 @@ import { RelativePathString, useRouter } from "expo-router";
 import * as OTPAuth from "otpauth";
 import { useEffect, useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -13,7 +14,7 @@ import {
   View,
 } from "react-native";
 import type { FormFields } from "../context/FormContext";
-import { decryptWithMasterKey, encryptWithMasterKey, getOrCreateMasterKey } from "../utils/crypto";
+import { decryptText, encryptText } from "../utils/crypto";
 import { Storage } from "../utils/storage";
 
 export default function AccountForm({
@@ -46,9 +47,7 @@ export default function AccountForm({
   const [missingFields, setMissingFields] = useState<string[]>([]);
 
   /**
-   * ------------------------------------------------------
-   * FIX #1 — RESET FORM WHEN CREATING A NEW ACCOUNT
-   * ------------------------------------------------------
+   * Reset form when creating a new account
    */
   useEffect(() => {
     if (!accountKey) {
@@ -57,30 +56,38 @@ export default function AccountForm({
   }, [accountKey]);
 
   /**
-   * ------------------------------------------------------
-   * FIX #2 — ONLY DECRYPT PASSWORD WHEN EDITING
-   * ------------------------------------------------------
+   * Decrypt password when editing an existing account
    */
   useEffect(() => {
-    if (!accountKey) return; // do NOT run in create mode
+    if (!accountKey) return; // Skip in create mode
 
     (async () => {
       try {
+        // Get GitHub token
+        const pat = await Storage.getItemAsync("github_token");
+        
+        if (!pat) {
+          console.warn("⚠️ No GitHub token found");
+          return;
+        }
+
         if (password) {
-          const masterKey = await getOrCreateMasterKey();
-          const decryptedPw = await decryptWithMasterKey(password, masterKey);
-          setFormData({ password: decryptedPw });
+          try {
+            const decryptedPw = await decryptText(password, pat);
+            setFormData({ password: decryptedPw });
+            console.log("✅ Password decrypted for editing");
+          } catch (err) {
+            console.error("❌ Failed to decrypt password for editing:", err);
+          }
         }
       } catch (err) {
-        console.error("Error decrypting password:", err);
+        console.error("Error in edit mode setup:", err);
       }
     })();
   }, [accountKey]);
 
   /**
-   * ------------------------------------------------------
-   * SUBMIT HANDLER
-   * ------------------------------------------------------
+   * Submit handler - Save or update account
    */
   const handleSubmit = async () => {
     const missing: string[] = [];
@@ -88,41 +95,89 @@ export default function AccountForm({
     if (!username.trim()) missing.push("username");
     if (!password.trim()) missing.push("password");
     setMissingFields(missing);
-    if (missing.length > 0) return;
+    
+    if (missing.length > 0) {
+      const msg = "Please fill in all required fields";
+      if (Platform.OS === 'web') {
+        window.alert(msg);
+      } else {
+        Alert.alert("Missing Fields", msg);
+      }
+      return;
+    }
 
     try {
       setIsSaving(true);
 
+      // Get GitHub token for encryption
+      const pat = await Storage.getItemAsync("github_token");
+      
+      if (!pat || pat.trim().length === 0) {
+        const msg = "GitHub token not found. Please add your token in Settings first.";
+        if (Platform.OS === 'web') {
+          window.alert(msg);
+        } else {
+          Alert.alert("Token Required", msg);
+        }
+        setIsSaving(false);
+        return;
+      }
+
+      // Build OTP URI if secret key is provided
       let value = accountOtp || "";
       if (secretKey && secretKey.trim()) {
-        const totp = new OTPAuth.TOTP({
-          label: accountName.trim(),
-          secret: OTPAuth.Secret.fromBase32(secretKey.trim()),
-        });
-        value = totp.toString();
+        try {
+          const totp = new OTPAuth.TOTP({
+            label: accountName.trim(),
+            secret: OTPAuth.Secret.fromBase32(secretKey.trim()),
+          });
+          value = totp.toString();
+        } catch (err) {
+          console.error("❌ Invalid OTP secret:", err);
+          const msg = "Invalid OTP secret key. Please check the format.";
+          if (Platform.OS === 'web') {
+            window.alert(msg);
+          } else {
+            Alert.alert("Invalid OTP", msg);
+          }
+          setIsSaving(false);
+          return;
+        }
       }
 
       const key = accountKey || `account_${Date.now()}`;
       
-      // Get master key and encrypt password
-      const masterKey = await getOrCreateMasterKey();
-      const encryptedPassword = await encryptWithMasterKey(password.trim(), masterKey);
+      // Encrypt password with PAT
+      console.log("🔐 Encrypting password with GitHub token...");
+      const encryptedPassword = await encryptText(password.trim(), pat);
+      
+      // Encrypt OTP secret if present
+      let encryptedOtp = value;
+      if (value) {
+        console.log("🔐 Encrypting OTP secret with GitHub token...");
+        encryptedOtp = await encryptText(value, pat);
+      }
 
       const data = {
         accountName: accountName.trim(),
         username: username.trim(),
         password: encryptedPassword,
-        value,
+        value: encryptedOtp,
         notes: notes.trim(),
       };
 
+      console.log("💾 Saving account data...");
       await Storage.setItemAsync(key, JSON.stringify(data));
 
+      // Add to account keys list if new account
       if (!accountKey) {
         const storedKeys = await Storage.getItemAsync("userAccountKeys");
         const keys = storedKeys ? JSON.parse(storedKeys) : [];
         if (!keys.includes(key)) keys.push(key);
         await Storage.setItemAsync("userAccountKeys", JSON.stringify(keys));
+        console.log("✅ Account added to keys list");
+      } else {
+        console.log("✅ Account updated");
       }
 
       resetForm();
@@ -130,7 +185,13 @@ export default function AccountForm({
 
       router.replace(`/details/${key}` as RelativePathString);
     } catch (error) {
-      console.error("Error saving account:", error);
+      console.error("❌ Error saving account:", error);
+      const msg = `Failed to save account: ${error instanceof Error ? error.message : "Unknown error"}`;
+      if (Platform.OS === 'web') {
+        window.alert(msg);
+      } else {
+        Alert.alert("Error", msg);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -164,7 +225,7 @@ export default function AccountForm({
       >
         {/* Account Name */}
         <View style={styles.fieldWrapper}>
-          <Text style={styles.label}>Account Name</Text>
+          <Text style={styles.label}>Account Name *</Text>
           <TextInput
             value={accountName}
             onChangeText={(text) => handleChange("accountName", text)}
@@ -175,7 +236,7 @@ export default function AccountForm({
 
         {/* Username */}
         <View style={styles.fieldWrapper}>
-          <Text style={styles.label}>Username</Text>
+          <Text style={styles.label}>Username *</Text>
           <TextInput
             value={username}
             onChangeText={(text) => handleChange("username", text)}
@@ -188,7 +249,7 @@ export default function AccountForm({
 
         {/* Password */}
         <View style={styles.fieldWrapper}>
-          <Text style={styles.label}>Password</Text>
+          <Text style={styles.label}>Password *</Text>
           <View style={getInputContainerStyle("password")}>
             <TextInput
               value={password}

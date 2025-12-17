@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
-import { Storage } from "./utils/storage";
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +9,18 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { decryptWithMasterKey, getOrCreateMasterKey } from "./utils/crypto";
+import {
+  decryptWithMasterKey,
+  getOrCreateMasterKey,
+} from "./utils/crypto";
+import { Storage } from "./utils/storage";
+
+/**
+ * Restore screen:
+ * - If user enters a Gist ID / URL it will use that.
+ * - If no Gist ID is entered, the app will automatically search the authenticated user's gists
+ *   (using the saved PAT) and pick the most recently updated gist containing 'authenticator_backup.enc'.
+ */
 
 export default function Restore() {
   const [gistId, setGistId] = useState("");
@@ -25,6 +35,7 @@ export default function Restore() {
   }, []);
 
   const extractGistId = (input: string) => {
+    if (!input) return "";
     if (input.includes("gist.github.com")) {
       const parts = input.split("/");
       return parts[parts.length - 1].trim();
@@ -32,15 +43,75 @@ export default function Restore() {
     return input.trim();
   };
 
+  /**
+   * Find the latest gist ID that contains the backup file.
+   * Returns gist ID string or null if none found.
+   */
+  const findLatestBackupGist = async (token: string): Promise<string | null> => {
+    // Fetch user's gists (first page). This should usually be enough.
+    const res = await fetch(`https://api.github.com/gists`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      },
+    });
+
+    if (!res.ok) {
+      // Pass details up for better error reporting
+      const errText = await res.text().catch(() => "");
+      throw new Error(`GitHub API error: ${res.status} ${errText}`);
+    }
+
+    const gists = await res.json();
+    if (!Array.isArray(gists) || gists.length === 0) return null;
+
+    // Find the newest gist containing authenticator_backup.enc
+    let latest: any = null;
+    for (const g of gists) {
+      if (!g.files) continue;
+      if (g.files["authenticator_backup.enc"]) {
+        if (!latest) latest = g;
+        else {
+          const a = new Date(g.updated_at || g.created_at || 0);
+          const b = new Date(latest.updated_at || latest.created_at || 0);
+          if (a > b) latest = g;
+        }
+      }
+    }
+
+    return latest ? latest.id : null;
+  };
+
+  const fetchBackupFromGist = async (token: string, id: string) => {
+    const res = await fetch(`https://api.github.com/gists/${id}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      },
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`Failed to fetch gist (${res.status}): ${txt}`);
+    }
+
+    const gistData = await res.json();
+
+    // File name expected: authenticator_backup.enc
+    const file = gistData.files?.["authenticator_backup.enc"];
+    if (!file || typeof file.content !== "string") {
+      throw new Error(
+        "Backup not found in gist. Expected file 'authenticator_backup.enc'."
+      );
+    }
+
+    // Gist file.content is plain text (not base64) — this is the exact text you saved.
+    return file.content.trim();
+  };
+
   const restoreBackup = async () => {
     try {
       setLoading(true);
-
-      if (!gistId.trim()) {
-        setLoading(false);
-        Alert.alert("Error", "Please enter a valid Gist ID or URL.");
-        return;
-      }
 
       const token = await Storage.getItemAsync("github_token");
       if (!token) {
@@ -49,46 +120,51 @@ export default function Restore() {
         return;
       }
 
-      const finalGistId = extractGistId(gistId);
+      // Determine gist id: either user provided or auto-detect
+      // Allow null when auto-detecting
+      let finalGistId: string | null = extractGistId(gistId) || null;
 
-      // Fetch encrypted backup from gist
-      const res = await fetch(`https://api.github.com/gists/${finalGistId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github+json",
-        },
-      });
+      if (!finalGistId) {
+        // Auto-detect the latest backup gist using PAT
+        try {
+          finalGistId = await findLatestBackupGist(token);
+        } catch (err: any) {
+          setLoading(false);
+          Alert.alert("GitHub Error", err.message || "Failed to query gists.");
+          return;
+        }
+      }
 
-      if (!res.ok) {
+      if (!finalGistId) {
         setLoading(false);
-        Alert.alert("Error", `Failed to fetch gist (${res.status}). Check ID and token.`);
+        Alert.alert(
+          "Not found",
+          "No backup gist containing 'authenticator_backup.enc' was found for this token."
+        );
         return;
       }
 
-      const gistData = await res.json();
-      const file = gistData.files["authenticator_backup.enc"];
-
-      if (!file || !file.content) {
+      // Fetch the backup content from the chosen gist
+      let rawContent: string;
+      try {
+        rawContent = await fetchBackupFromGist(token, finalGistId);
+      } catch (err: any) {
         setLoading(false);
-        Alert.alert("Error", "Invalid backup file. Expected 'authenticator_backup.enc'.");
+        Alert.alert("Error", err.message || "Failed to fetch backup gist.");
         return;
       }
 
-      const rawContent = file.content.trim();
-
-      // 🔥 NEW: Support BOTH formats (old JSON wrapper and new raw cipher)
+      // Support both formats: old JSON wrapper and new raw cipher string
       let cipher: string;
 
       if (rawContent.startsWith("{")) {
         // OLD FORMAT: JSON wrapper
-        console.log("Detected old JSON format backup");
         try {
           const parsed = JSON.parse(rawContent);
           cipher = parsed.cipher;
-          
           if (!cipher) {
             setLoading(false);
-            Alert.alert("Error", "Backup file is missing encrypted content.");
+            Alert.alert("Error", "Backup JSON missing the 'cipher' field.");
             return;
           }
         } catch (e) {
@@ -98,62 +174,66 @@ export default function Restore() {
         }
       } else if (rawContent.startsWith("v2:")) {
         // NEW FORMAT: Raw cipher string
-        console.log("Detected new raw cipher format backup");
         cipher = rawContent;
       } else {
         setLoading(false);
         Alert.alert(
-          "Error", 
+          "Error",
           `Invalid backup format. File starts with: ${rawContent.substring(0, 20)}...`
         );
         return;
       }
 
-      // Get master key and decrypt
-      const masterKey = await getOrCreateMasterKey();
-      
-      console.log("Attempting to decrypt backup...");
-      const plaintext = await decryptWithMasterKey(cipher, masterKey);
+      // Decrypt using master key (device-specific)
+      try {
+        // IMPORTANT: This will use the device's master key stored in SecureStore.
+        // If the backup was created on another device with a different master key,
+        // decryption will fail.
+        const masterKey = await getOrCreateMasterKey();
+        const plaintext = await decryptWithMasterKey(cipher, masterKey);
 
-      // Parse decrypted content
-      const payload = JSON.parse(plaintext);
-      const accounts = payload.accounts ?? {};
+        // Parse decrypted JSON
+        const payload = JSON.parse(plaintext);
+        const accounts = payload.accounts ?? {};
 
-      // Restore accounts AS-IS (passwords already encrypted)
-      const keys = Object.keys(accounts);
-      
-      if (keys.length === 0) {
+        const keys = Object.keys(accounts);
+        if (keys.length === 0) {
+          setLoading(false);
+          Alert.alert("Warning", "Backup contains no accounts.");
+          return;
+        }
+
+        // Restore accounts
+        for (const k of keys) {
+          await Storage.setItemAsync(k, JSON.stringify(accounts[k]));
+        }
+
+        // Update account key list
+        await Storage.setItemAsync("userAccountKeys", JSON.stringify(keys));
+
         setLoading(false);
-        Alert.alert("Warning", "Backup contains no accounts.");
-        return;
+        Alert.alert("Success", `Restored ${keys.length} account(s) successfully!`);
+        setGistId("");
+      } catch (err: any) {
+        setLoading(false);
+
+        // Friendly guidance when master key mismatch occurs
+        const msg = (err && err.message) || String(err);
+        if (msg.includes("Decryption failed") || msg.includes("Decryption failed") || msg.includes("wrong master key") || msg.includes("Decryption failed")) {
+          Alert.alert(
+            "Decryption failed",
+            "Unable to decrypt the backup. This backup was likely created with a different device's master key."
+          );
+        } else if (msg.includes("Unexpected token")) {
+          Alert.alert("Error", "Decrypted data is not valid JSON.");
+        } else {
+          Alert.alert("Restore failed", msg || "Unknown error occurred during restore.");
+        }
       }
-
-      for (const k of keys) {
-        await Storage.setItemAsync(k, JSON.stringify(accounts[k]));
-      }
-
-      // Update the account keys list
-      await Storage.setItemAsync("userAccountKeys", JSON.stringify(keys));
-
+    } catch (topErr: any) {
+      console.error("Unexpected restore error:", topErr);
       setLoading(false);
-      Alert.alert("Success", `Restored ${keys.length} account(s) successfully!`);
-      setGistId("");
-    } catch (err: any) {
-      console.error("Restore error:", err);
-      setLoading(false);
-      
-      // More helpful error messages
-      let errorMessage = "Restore failed. ";
-      
-      if (err.message?.includes("Decryption failed")) {
-        errorMessage += "Wrong master key - this backup was created on a different device.";
-      } else if (err.message?.includes("Unexpected token")) {
-        errorMessage += "Decrypted data is not valid JSON.";
-      } else {
-        errorMessage += err.message || "Unknown error occurred.";
-      }
-      
-      Alert.alert("Error", errorMessage);
+      Alert.alert("Error", topErr.message || "An unexpected error occurred.");
     }
   };
 
@@ -224,10 +304,10 @@ export default function Restore() {
 
       {/* Gist Input */}
       <Text style={{ fontSize: 16, marginBottom: 6, fontWeight: "500" }}>
-        Gist ID or URL
+        Gist ID or URL (optional)
       </Text>
       <TextInput
-        placeholder="Example: a1b2c3d4e5f6 or https://gist.github.com/..."
+        placeholder="Leave empty to auto-find using your PAT"
         value={gistId}
         onChangeText={setGistId}
         autoCapitalize="none"
