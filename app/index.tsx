@@ -65,21 +65,27 @@ export default function Index() {
   );
 
   const deleteAccount = async (key: string) => {
-    try {
-      await Storage.deleteItemAsync(key);
+  try {
+    await Storage.deleteItemAsync(key);
 
-      const updatedKeys = accountKeys.filter((k) => k !== key);
-      await Storage.setItemAsync(
-        "userAccountKeys",
-        JSON.stringify(updatedKeys)
-      );
+    const updatedKeys = accountKeys.filter((k) => k !== key);
+    await Storage.setItemAsync(
+      "userAccountKeys",
+      JSON.stringify(updatedKeys)
+    );
 
-      setAccountKeys(updatedKeys);
-      setAccounts((prev) => prev.filter((acc) => acc.key !== key));
-    } catch (err) {
-      console.error("Error deleting account:", err);
-    }
-  };
+    setAccountKeys(updatedKeys);
+    setAccounts((prev) => prev.filter((acc) => acc.key !== key));
+
+    // Trigger auto-backup after deletion
+    const { triggerAutoBackup } = await import("./utils/backupUtils");
+    triggerAutoBackup().catch(err => {
+      console.error("Auto-backup after delete failed:", err);
+    });
+  } catch (err) {
+    console.error("Error deleting account:", err);
+  }
+};
 
   const editAccount = async (key: string, newName: string) => {
     try {

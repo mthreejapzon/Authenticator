@@ -1,8 +1,32 @@
 import { Stack } from "expo-router";
+import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { FormProvider } from "./context/FormContext"; // ✅ make sure this path is correct
+import { FormProvider } from "./context/FormContext";
 
 export default function RootLayout() {
+
+  // Initialize auto-sync on app startup
+    useEffect(() => {
+      (async () => {
+        try {
+          const { setAutoSyncEnabled, isAutoSyncEnabled } = await import("./utils/backupUtils");
+          const { Storage } = await import("./utils/storage");
+          
+          const token = await Storage.getItemAsync("github_token");
+          if (token) {
+            // Enable auto-sync by default if not set
+            const enabled = await isAutoSyncEnabled();
+            if (enabled === null || enabled === undefined) {
+              await setAutoSyncEnabled(true);
+            }
+            console.log("✅ Auto-sync initialized");
+          }
+        } catch (err) {
+          console.error("❌ Auto-sync initialization failed:", err);
+        }
+      })();
+    }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <FormProvider>

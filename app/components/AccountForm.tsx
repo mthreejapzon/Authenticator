@@ -14,7 +14,7 @@ import {
   View,
 } from "react-native";
 import type { FormFields } from "../context/FormContext";
-import { decryptText, encryptText } from "../utils/crypto";
+import { decryptText } from "../utils/crypto";
 import { Storage } from "../utils/storage";
 
 export default function AccountForm({
@@ -45,6 +45,15 @@ export default function AccountForm({
   const [showPassword, setShowPassword] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
+  const [hasToken, setHasToken] = useState(false);
+
+// Check if GitHub token exists
+  useEffect(() => {
+    (async () => {
+      const token = await Storage.getItemAsync("github_token");
+      setHasToken(token !== null && token.trim().length > 0);
+    })();
+  }, []);
 
   /**
    * Reset form when creating a new account
@@ -90,112 +99,117 @@ export default function AccountForm({
    * Submit handler - Save or update account
    */
   const handleSubmit = async () => {
-    const missing: string[] = [];
-    if (!accountName.trim()) missing.push("accountName");
-    if (!username.trim()) missing.push("username");
-    if (!password.trim()) missing.push("password");
-    setMissingFields(missing);
-    
-    if (missing.length > 0) {
-      const msg = "Please fill in all required fields";
-      if (Platform.OS === 'web') {
-        window.alert(msg);
-      } else {
-        Alert.alert("Missing Fields", msg);
-      }
-      return;
+  const missing: string[] = [];
+  if (!accountName.trim()) missing.push("accountName");
+  if (!username.trim()) missing.push("username");
+  if (!password.trim()) missing.push("password");
+  setMissingFields(missing);
+  
+  if (missing.length > 0) {
+    const msg = "Please fill in all required fields";
+    if (Platform.OS === 'web') {
+      window.alert(msg);
+    } else {
+      Alert.alert("Missing Fields", msg);
     }
+    return;
+  }
 
-    try {
-      setIsSaving(true);
+  try {
+    setIsSaving(true);
 
-      // Get GitHub token for encryption
-      const pat = await Storage.getItemAsync("github_token");
-      
-      if (!pat || pat.trim().length === 0) {
-        const msg = "GitHub token not found. Please add your token in Settings first.";
+    // Get GitHub token (optional now)
+    const pat = await Storage.getItemAsync("github_token");
+    const hasGitHubToken = pat && pat.trim().length > 0;
+
+    // Build OTP URI if secret key is provided
+    let value = accountOtp || "";
+    if (secretKey && secretKey.trim()) {
+      try {
+        const totp = new OTPAuth.TOTP({
+          label: accountName.trim(),
+          secret: OTPAuth.Secret.fromBase32(secretKey.trim()),
+        });
+        value = totp.toString();
+      } catch (err) {
+        console.error("❌ Invalid OTP secret:", err);
+        const msg = "Invalid OTP secret key. Please check the format.";
         if (Platform.OS === 'web') {
           window.alert(msg);
         } else {
-          Alert.alert("Token Required", msg);
+          Alert.alert("Invalid OTP", msg);
         }
         setIsSaving(false);
         return;
       }
-
-      // Build OTP URI if secret key is provided
-      let value = accountOtp || "";
-      if (secretKey && secretKey.trim()) {
-        try {
-          const totp = new OTPAuth.TOTP({
-            label: accountName.trim(),
-            secret: OTPAuth.Secret.fromBase32(secretKey.trim()),
-          });
-          value = totp.toString();
-        } catch (err) {
-          console.error("❌ Invalid OTP secret:", err);
-          const msg = "Invalid OTP secret key. Please check the format.";
-          if (Platform.OS === 'web') {
-            window.alert(msg);
-          } else {
-            Alert.alert("Invalid OTP", msg);
-          }
-          setIsSaving(false);
-          return;
-        }
-      }
-
-      const key = accountKey || `account_${Date.now()}`;
-      
-      // Encrypt password with PAT
-      console.log("🔐 Encrypting password with GitHub token...");
-      const encryptedPassword = await encryptText(password.trim(), pat);
-      
-      // Encrypt OTP secret if present
-      let encryptedOtp = value;
-      if (value) {
-        console.log("🔐 Encrypting OTP secret with GitHub token...");
-        encryptedOtp = await encryptText(value, pat);
-      }
-
-      const data = {
-        accountName: accountName.trim(),
-        username: username.trim(),
-        password: encryptedPassword,
-        value: encryptedOtp,
-        notes: notes.trim(),
-      };
-
-      console.log("💾 Saving account data...");
-      await Storage.setItemAsync(key, JSON.stringify(data));
-
-      // Add to account keys list if new account
-      if (!accountKey) {
-        const storedKeys = await Storage.getItemAsync("userAccountKeys");
-        const keys = storedKeys ? JSON.parse(storedKeys) : [];
-        if (!keys.includes(key)) keys.push(key);
-        await Storage.setItemAsync("userAccountKeys", JSON.stringify(keys));
-        console.log("✅ Account added to keys list");
-      } else {
-        console.log("✅ Account updated");
-      }
-
-      resetForm();
-      setMissingFields([]);
-
-      router.replace(`/details/${key}` as RelativePathString);
-    } catch (error) {
-      console.error("❌ Error saving account:", error);
-      const msg = `Failed to save account: ${error instanceof Error ? error.message : "Unknown error"}`;
-      if (Platform.OS === 'web') {
-        window.alert(msg);
-      } else {
-        Alert.alert("Error", msg);
-      }
-    } finally {
-      setIsSaving(false);
     }
-  };
+
+    const key = accountKey || `account_${Date.now()}`;
+    
+    let finalPassword = password.trim();
+    let finalOtp = value;
+
+    // Encrypt if we have a token
+    if (hasGitHubToken) {
+      console.log("🔐 Encrypting data with GitHub token...");
+      const { encryptText } = await import("../utils/crypto");
+      finalPassword = await encryptText(password.trim(), pat!);
+      
+      if (value) {
+        finalOtp = await encryptText(value, pat!);
+      }
+    } else {
+      console.log("⚠️ No GitHub token - saving data unencrypted");
+    }
+
+    const data = {
+      accountName: accountName.trim(),
+      username: username.trim(),
+      password: finalPassword,
+      value: finalOtp,
+      notes: notes.trim(),
+      encrypted: hasGitHubToken, // Flag to know if data is encrypted
+    };
+
+    console.log("💾 Saving account data...");
+    await Storage.setItemAsync(key, JSON.stringify(data));
+
+    // Add to account keys list if new account
+    if (!accountKey) {
+      const storedKeys = await Storage.getItemAsync("userAccountKeys");
+      const keys = storedKeys ? JSON.parse(storedKeys) : [];
+      if (!keys.includes(key)) keys.push(key);
+      await Storage.setItemAsync("userAccountKeys", JSON.stringify(keys));
+      console.log("✅ Account added to keys list");
+    } else {
+      console.log("✅ Account updated");
+    }
+
+    // Trigger auto-backup if token exists
+    if (hasGitHubToken) {
+      console.log("🔄 Triggering auto-backup...");
+      const { triggerAutoBackup } = await import("../utils/backupUtils");
+      triggerAutoBackup().catch(err => {
+        console.error("Auto-backup failed:", err);
+      });
+    }
+
+    resetForm();
+    setMissingFields([]);
+
+    router.replace(`/details/${key}` as RelativePathString);
+  } catch (error) {
+    console.error("❌ Error saving account:", error);
+    const msg = `Failed to save account: ${error instanceof Error ? error.message : "Unknown error"}`;
+    if (Platform.OS === 'web') {
+      window.alert(msg);
+    } else {
+      Alert.alert("Error", msg);
+    }
+  } finally {
+    setIsSaving(false);
+  }
+};
 
   const handleChange = (fieldName: keyof FormFields, value: string) => {
     setFormData({ [fieldName]: value });
@@ -223,6 +237,23 @@ export default function AccountForm({
         style={{ flex: 1, backgroundColor: "#fff", padding: 20 }}
         contentContainerStyle={{ paddingBottom: 100 }}
       >
+        {/* Warning if no token */}
+          {!hasToken && (
+            <View
+              style={{
+                backgroundColor: "#fff3cd",
+                borderRadius: 8,
+                padding: 12,
+                marginBottom: 16,
+                borderLeftWidth: 4,
+                borderLeftColor: "#ff9800",
+              }}
+            >
+              <Text style={{ color: "#856404", fontSize: 13, lineHeight: 18 }}>
+                ⚠️ <Text style={{ fontWeight: "600" }}>No encryption token:</Text> Your data will be saved unencrypted. Add a GitHub token in Settings for encryption and cloud backup.
+              </Text>
+            </View>
+          )}
         {/* Account Name */}
         <View style={styles.fieldWrapper}>
           <Text style={styles.label}>Account Name *</Text>

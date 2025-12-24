@@ -83,3 +83,67 @@ export async function getGistBackup(pat: string): Promise<string | null> {
   return file.content.trim();
 }
 
+// Add to the END of utils/githubBackup.ts
+
+/**
+ * Update an existing gist with new backup content
+ */
+export async function updateGistBackup(
+  pat: string, 
+  gistId: string, 
+  cipherText: string
+): Promise<void> {
+  const body = {
+    description: `Authenticator backup (updated ${new Date().toLocaleString()})`,
+    files: {
+      [BACKUP_FILENAME]: {
+        content: cipherText,
+      },
+    },
+  };
+
+  await githubRequest(`/gists/${gistId}`, pat, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Find if a backup gist exists, return its ID or null
+ */
+export async function findBackupGistId(pat: string): Promise<string | null> {
+  const res = await githubRequest("/gists", pat);
+  const gists = await res.json();
+
+  if (!Array.isArray(gists) || gists.length === 0) return null;
+
+  // Find any gist containing the backup file
+  for (const g of gists) {
+    if (g.files && g.files[BACKUP_FILENAME]) {
+      return g.id;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Create or update backup gist
+ * Returns the gist ID
+ */
+export async function createOrUpdateGistBackup(
+  pat: string, 
+  cipherText: string
+): Promise<string> {
+  // Check if gist already exists
+  const existingGistId = await findBackupGistId(pat);
+
+  if (existingGistId) {
+    // Update existing gist
+    await updateGistBackup(pat, existingGistId, cipherText);
+    return existingGistId;
+  } else {
+    // Create new gist
+    return await uploadGistBackup(pat, cipherText);
+  }
+}

@@ -135,19 +135,93 @@ export default function SettingsScreen() {
   };
 
   const performTokenSave = async (token: string) => {
-    await Storage.setItemAsync(GITHUB_TOKEN_KEY, token);
-    setHasToken(true);
-    setMaskedToken("ghp_" + "•".repeat(32) + token.slice(-4));
-    setGithubToken(token);
-    setShowToken(false);
+  await Storage.setItemAsync(GITHUB_TOKEN_KEY, token);
+  setHasToken(true);
+  setMaskedToken("ghp_" + "•".repeat(32) + token.slice(-4));
+  setGithubToken(token);
+  setShowToken(false);
+  
+  // Auto-restore from existing gist if found
+  setStatus("Checking for existing backups...");
+  try {
+    const { findBackupGistId, getGistBackup } = await import("./utils/githubBackup");
+    const { importAllAccounts } = await import("./utils/backupUtils");
     
-    const msg = "GitHub token saved securely. You can now decrypt your accounts and create backups.";
+    // Look for existing gist
+    const existingGistId = await findBackupGistId(token);
+    
+    if (existingGistId) {
+      const shouldRestore = Platform.OS === 'web'
+        ? window.confirm(
+            `Found existing backup in your GitHub Gists!\n\n` +
+            `Gist ID: ${existingGistId}\n\n` +
+            `Would you like to restore your accounts from this backup?`
+          )
+        : await new Promise<boolean>((resolve) => {
+            Alert.alert(
+              "Backup Found!",
+              `Found existing backup (Gist ID: ${existingGistId})\n\nRestore your accounts from this backup?`,
+              [
+                { text: "Not Now", style: "cancel", onPress: () => resolve(false) },
+                { text: "Restore", onPress: () => resolve(true) },
+              ]
+            );
+          });
+
+      if (shouldRestore) {
+        setStatus("Restoring accounts from backup...");
+        
+        // Fetch and import backup
+        const cipherText = await getGistBackup(token);
+        if (cipherText) {
+          await importAllAccounts(cipherText);
+          
+          setGistId(existingGistId);
+          const count = (await Storage.getItemAsync("userAccountKeys"))?.split(",").length || 0;
+          setStatus(`Restored ${count} account(s) successfully!`);
+          
+          const successMsg = `Successfully restored ${count} account(s) from backup!`;
+          if (Platform.OS === 'web') {
+            window.alert(successMsg);
+          } else {
+            Alert.alert("Restore Complete", successMsg);
+          }
+        } else {
+          throw new Error("Failed to fetch backup content");
+        }
+      } else {
+        setGistId(existingGistId);
+        setStatus("Token saved. Auto-sync enabled.");
+        
+        const msg = "GitHub token saved. Auto-sync is now enabled.";
+        if (Platform.OS === 'web') {
+          window.alert(msg);
+        } else {
+          Alert.alert("Saved", msg);
+        }
+      }
+    } else {
+      setStatus("Token saved. Auto-sync enabled.");
+      
+      const msg = "GitHub token saved. Auto-sync is now enabled. Your accounts will be automatically backed up.";
+      if (Platform.OS === 'web') {
+        window.alert(msg);
+      } else {
+        Alert.alert("Saved", msg);
+      }
+    }
+  } catch (err) {
+    console.error("Auto-restore check failed:", err);
+    setStatus("Token saved (auto-restore failed)");
+    
+    const msg = "Token saved, but couldn't check for existing backups. You can manually restore from the Restore screen.";
     if (Platform.OS === 'web') {
       window.alert(msg);
     } else {
       Alert.alert("Saved", msg);
     }
-  };
+  }
+};
 
   // Remove token AND clear all backup metadata
   const removeToken = async () => {

@@ -124,31 +124,46 @@ export default function DetailsScreen() {
         let decryptedOtpValue = parsed.value;
         let hasDecryptionError = false;
 
-        // Try to decrypt password
-        if (parsed.password) {
-          try {
-            decryptedPw = await decryptText(parsed.password, pat);
-            console.log("✅ Password decrypted successfully");
-          } catch (e) {
-            console.error("❌ Password decrypt failed:", e);
-            hasDecryptionError = true;
-            setDecryptionError("Failed to decrypt password. Please check your GitHub token in Settings.");
-            decryptedPw = "";
+        // Check if data is encrypted (default true for backward compatibility)
+        const isEncrypted = parsed.encrypted !== false;
+
+        if (isEncrypted && pat) {
+          // Try to decrypt password
+          if (parsed.password) {
+            try {
+              decryptedPw = await decryptText(parsed.password, pat);
+              console.log("✅ Password decrypted successfully");
+            } catch (e) {
+              console.error("❌ Password decrypt failed:", e);
+              hasDecryptionError = true;
+              setDecryptionError("Failed to decrypt password. Check your GitHub token in Settings.");
+              decryptedPw = "";
+            }
           }
+
+          // Try to decrypt OTP secret
+          if (parsed.value) {
+            try {
+              decryptedOtpValue = await decryptText(parsed.value, pat);
+              console.log("✅ OTP secret decrypted successfully");
+            } catch (e) {
+              console.error("❌ OTP decrypt failed:", e);
+              hasDecryptionError = true;
+              setDecryptionError("Failed to decrypt OTP secret. Check your GitHub token in Settings.");
+              decryptedOtpValue = "";
+            }
+          }
+        } else if (!isEncrypted) {
+          // Data is not encrypted, use as-is
+          console.log("ℹ️ Account data is not encrypted");
+          decryptedPw = parsed.password || "";
+          decryptedOtpValue = parsed.value || "";
+        } else {
+          // Encrypted but no token
+          console.warn("⚠️ Data is encrypted but no token available");
+          setDecryptionError("GitHub token required to decrypt this account");
         }
 
-        // Try to decrypt OTP secret
-        if (parsed.value) {
-          try {
-            decryptedOtpValue = await decryptText(parsed.value, pat);
-            console.log("✅ OTP secret decrypted successfully");
-          } catch (e) {
-            console.error("❌ OTP decrypt failed:", e);
-            hasDecryptionError = true;
-            setDecryptionError("Failed to decrypt OTP secret. Please check your GitHub token in Settings.");
-            decryptedOtpValue = "";
-          }
-        }
 
         // Show error alert if decryption failed
         if (hasDecryptionError) {
