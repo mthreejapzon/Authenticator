@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { RelativePathString, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import * as OTPAuth from "otpauth";
 import { useEffect, useRef, useState } from "react";
@@ -5,13 +6,14 @@ import {
   Alert,
   Animated,
   Easing,
+  Linking,
   Platform,
   ScrollView,
   Text,
-  TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import * as icons from "simple-icons";
 import AccountForm from "../components/AccountForm";
@@ -23,10 +25,12 @@ export default function DetailsScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const { key } = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
   const {
     accountName,
     username,
     password,
+    websiteUrl,
     secretKey,
     notes,
     setFormData,
@@ -39,15 +43,21 @@ export default function DetailsScreen() {
     password: string;
     secretKey: string;
     value: string;
+    websiteUrl?: string;
+    createdAt?: string;
+    modifiedAt?: string;
+    isFavorite?: boolean;
   } | null>(null);
 
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [otpCode, setOtpCode] = useState<string>("Generating...");
   const [otpPeriod, setOtpPeriod] = useState<number>(30);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(30);
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [decryptedPassword, setDecryptedPassword] = useState<string>("");
   const [notesText, setNotesText] = useState<string>("");
   const [decryptionError, setDecryptionError] = useState<string | null>(null);
+  const [isFavorite, setIsFavorite] = useState<boolean>(false);
 
   const progress = useRef(new Animated.Value(1)).current;
   const highlightAnim = useRef(new Animated.Value(0)).current;
@@ -164,7 +174,6 @@ export default function DetailsScreen() {
           setDecryptionError("GitHub token required to decrypt this account");
         }
 
-
         // Show error alert if decryption failed
         if (hasDecryptionError) {
           const message = "Decryption failed. This usually means:\n\n1. Your GitHub token is incorrect\n2. The data was encrypted with a different token\n3. The backup data is corrupted\n\nPlease verify your GitHub token in Settings.";
@@ -175,7 +184,19 @@ export default function DetailsScreen() {
           }
         }
 
-        setData({ ...parsed, value: decryptedOtpValue });
+        // Set favorite status
+        setIsFavorite(parsed.isFavorite || false);
+
+        // Set created/modified dates (backward compatible)
+        const now = new Date().toISOString();
+        const accountData = {
+          ...parsed,
+          value: decryptedOtpValue,
+          createdAt: parsed.createdAt || now,
+          modifiedAt: parsed.modifiedAt || now,
+        };
+
+        setData(accountData);
         setFormData(parsed);
         setNotesText(parsed.notes || "");
         setDecryptedPassword(decryptedPw);
@@ -183,7 +204,23 @@ export default function DetailsScreen() {
         // Generate OTP if we have a secret
         if (decryptedOtpValue) {
           try {
-            const otpDetails = OTPAuth.URI.parse(decryptedOtpValue);
+            let otpDetails;
+            
+            // Check if it's a valid OTP URI or just a secret
+            if (decryptedOtpValue.startsWith('otpauth://')) {
+              // It's a full OTP URI
+              otpDetails = OTPAuth.URI.parse(decryptedOtpValue);
+            } else {
+              // It's just a secret key, create a TOTP object manually
+              otpDetails = new OTPAuth.TOTP({
+                issuer: parsed.accountName || 'Account',
+                label: parsed.username || 'User',
+                algorithm: 'SHA1',
+                digits: 6,
+                period: 30,
+                secret: decryptedOtpValue.replace(/\s+/g, ''), // Remove any whitespace
+              });
+            }
 
             if (otpDetails instanceof OTPAuth.TOTP) {
               const totp = otpDetails;
@@ -195,6 +232,7 @@ export default function DetailsScreen() {
 
                 const epoch = Math.floor(Date.now() / 1000);
                 const remaining = totp.period - (epoch % totp.period);
+                setRemainingSeconds(remaining);
                 startProgressBar(remaining);
               };
 
@@ -206,8 +244,8 @@ export default function DetailsScreen() {
 
               const interval = setInterval(updateOtp, 1000);
               return () => clearInterval(interval);
-            } else {
-              const hotp = otpDetails as OTPAuth.HOTP;
+            } else if (otpDetails instanceof OTPAuth.HOTP) {
+              const hotp = otpDetails;
               setOtpPeriod(0);
               setOtpCode(hotp.generate());
               navigation.setOptions({
@@ -215,9 +253,9 @@ export default function DetailsScreen() {
               });
             }
           } catch (err) {
-            console.error("❌ Invalid OTP URI:", err);
+            console.error("❌ Invalid OTP configuration:", err);
             setOtpCode("Invalid OTP");
-            setDecryptionError("Invalid OTP configuration");
+            setDecryptionError("Invalid OTP configuration. The secret key format may be incorrect.");
           }
         } else {
           // No OTP secret available
@@ -236,41 +274,103 @@ export default function DetailsScreen() {
     })();
   }, [key]);
 
+  // Toggle favorite
+  const toggleFavorite = async () => {
+    if (!key || !data) return;
+    
+    const newFavoriteStatus = !isFavorite;
+    setIsFavorite(newFavoriteStatus);
+    
+    try {
+      const storedData = await Storage.getItemAsync(key as string);
+      if (storedData) {
+        const parsed = JSON.parse(storedData);
+        parsed.isFavorite = newFavoriteStatus;
+        parsed.modifiedAt = new Date().toISOString();
+        await Storage.setItemAsync(key as string, JSON.stringify(parsed));
+        setData({ ...data, isFavorite: newFavoriteStatus, modifiedAt: parsed.modifiedAt });
+      }
+    } catch (err) {
+      console.error("Error toggling favorite:", err);
+    }
+  };
+
+  // Delete account
+  const handleDelete = () => {
+    if (!key) return;
+
+    Alert.alert(
+      "Delete Account",
+      "Are you sure you want to delete this account? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // Remove from keys list
+              const storedKeys = await Storage.getItemAsync("userAccountKeys");
+              const keys = storedKeys ? JSON.parse(storedKeys) : [];
+              const updatedKeys = keys.filter((k: string) => k !== key);
+              await Storage.setItemAsync("userAccountKeys", JSON.stringify(updatedKeys));
+              
+              // Delete account data
+              await Storage.deleteItemAsync(key as string);
+              
+              router.replace("/");
+            } catch (err) {
+              console.error("Error deleting account:", err);
+              Alert.alert("Error", "Failed to delete account");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // Header config
   useEffect(() => {
     navigation.setOptions({
-      headerBackTitle: "Accounts",
-      headerTitle: data?.accountName || "Account Details",
-      headerRight: () =>
-        !isEditing ? (
-          <TouchableOpacity onPress={() => setIsEditing(true)} activeOpacity={0.8}>
-            <View style={{ backgroundColor: "#007AFF", paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 }}>
-              <Text style={{ color: "#fff", fontWeight: "600" }}>Edit</Text>
-            </View>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity onPress={() => setIsEditing(false)} activeOpacity={0.8}>
-            <View style={{ backgroundColor: "#f2f2f2", paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 }}>
-              <Text style={{ color: "#333", fontWeight: "600" }}>Cancel</Text>
-            </View>
-          </TouchableOpacity>
-        ),
+      headerShown: false,
     });
   }, [navigation, isEditing, data?.accountName]);
 
-  const barWidth = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0%", "100%"],
-  });
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return "";
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+    } catch {
+      return "";
+    }
+  };
 
-  const getBackgroundColor = (field: string) => {
-    const isActive = highlightField === field;
-    return isActive
-      ? highlightAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: ["#f2f2f2", "#d9f8d9"],
-        })
-      : "#f2f2f2";
+  const openWebsite = async (url?: string) => {
+    if (!url) return;
+    let finalUrl = url;
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      finalUrl = `https://${url}`;
+    }
+    try {
+      const canOpen = await Linking.canOpenURL(finalUrl);
+      if (canOpen) {
+        await Linking.openURL(finalUrl);
+      }
+    } catch (err) {
+      console.error("Error opening URL:", err);
+    }
+  };
+
+  // Split OTP code for display (first 3 digits blue, rest gray)
+  const getOtpDisplay = (code: string) => {
+    if (code.length >= 6) {
+      return {
+        firstPart: code.substring(0, 3),
+        secondPart: code.substring(3),
+      };
+    }
+    return { firstPart: code, secondPart: "" };
   };
 
   if (isEditing) {
@@ -280,6 +380,7 @@ export default function DetailsScreen() {
         accountName={accountName}
         username={username}
         password={password}
+        websiteUrl={websiteUrl}
         accountOtp={data?.value}
         secretKey={secretKey}
         notes={notes}
@@ -290,311 +391,597 @@ export default function DetailsScreen() {
     );
   }
 
+  const otpDisplay = getOtpDisplay(otpCode);
+  const progressBarWidth = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0%", "100%"],
+  });
+
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: "#fff", padding: 20 }}
-      contentContainerStyle={{ paddingBottom: 50 }}
-    >
-      {/* Decryption Error Banner */}
-      {decryptionError && (
-        <View
-          style={{
-            backgroundColor: "#fff3cd",
-            borderRadius: 8,
-            padding: 12,
-            marginBottom: 16,
-            borderLeftWidth: 4,
-            borderLeftColor: "#ff9800",
-          }}
-        >
-          <Text style={{ color: "#856404", fontWeight: "600", fontSize: 14 }}>
-            ⚠️ {decryptionError}
-          </Text>
-        </View>
-      )}
-
-      {/* Account Name */}
-      <Animated.View
+    <View style={{ flex: 1, backgroundColor: "#fff" }}>
+      {/* Custom Header */}
+      <View
         style={{
-          backgroundColor: "#f9f9f9",
-          borderRadius: 12,
-          paddingVertical: 16,
-          paddingHorizontal: 14,
-          marginBottom: 20,
-          shadowColor: "#000",
-          shadowOpacity: 0.05,
-          shadowOffset: { width: 0, height: 1 },
-          shadowRadius: 4,
-          elevation: 1,
+          borderBottomWidth: 0.613,
+          borderBottomColor: "#e5e7eb",
+          paddingTop: insets.top,
+          minHeight: 72.591,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 16,
+          paddingBottom: 12,
         }}
       >
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          {(() => {
-            const providerName = data?.accountName || "";
-            const formatted = providerName.toLowerCase().replace(/\s+/g, "");
-            const iconKey = `si${formatted.charAt(0).toUpperCase()}${formatted.slice(1)}`;
-            const providerIcon: any = (icons as any)[iconKey] || null;
-
-            if (providerIcon) {
-              return (
-                <View
-                  style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 10,
-                    backgroundColor: `#${providerIcon.hex}`,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginRight: 14,
-                  }}
-                >
-                  <Svg width={26} height={26} viewBox="0 0 24 24">
-                    <Path fill="#fff" d={providerIcon.path} />
-                  </Svg>
-                </View>
-              );
-            }
-
-            const initials = providerName
-              ? providerName.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase()
-              : "??";
-            return (
-              <View
-                style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 10,
-                  backgroundColor: "#e0e0e0",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginRight: 14,
-                }}
-              >
-                <Text style={{ color: "#555", fontWeight: "700", fontSize: 18 }}>
-                  {initials}
-                </Text>
-              </View>
-            );
-          })()}
-
-          <View style={{ flex: 1 }}>
-            <Text
-              style={{
-                fontSize: 20,
-                color: "#000",
-                fontWeight: "700",
-                letterSpacing: 0.3,
-              }}
-            >
-              {data?.accountName || "N/A"}
-            </Text>
-          </View>
-        </View>
-      </Animated.View>
-
-      {/* Username */}
-      <Text style={{ fontWeight: "600", fontSize: 15, color: "#333" }}>
-        Username
-      </Text>
-      <TouchableOpacity
-        onPress={() => copyToClipboard(data?.username || "", "username")}
-        activeOpacity={0.8}
-      >
-        <Animated.View
+        {/* Back Button */}
+        <TouchableOpacity
+          onPress={() => router.back()}
+          activeOpacity={0.8}
           style={{
-            backgroundColor: getBackgroundColor("username"),
+            width: 36,
+            height: 40,
+            alignItems: "center",
+            justifyContent: "center",
             borderRadius: 8,
-            padding: 10,
-            marginTop: 4,
-            marginBottom: 6,
           }}
         >
-          <Text style={{ fontSize: 16, color: "#000", fontWeight: "500" }}>
-            {data?.username || "N/A"}
-          </Text>
-        </Animated.View>
-      </TouchableOpacity>
-      {data?.username ? (
-        <Text style={{ fontSize: 12, color: "#666", textAlign: "right" }}>
-          Tap to copy
-        </Text>
-      ) : null}
+          <Ionicons name="arrow-back" size={20} color="#000" />
+        </TouchableOpacity>
 
-      {/* Password */}
-      <Text
-        style={{
-          fontWeight: "600",
-          fontSize: 15,
-          color: "#333",
-          marginTop: 16,
-        }}
-      >
-        Password
-      </Text>
-      <TouchableOpacity
-        onPress={() => copyToClipboard(decryptedPassword || "", "password")}
-        activeOpacity={0.8}
-        disabled={!decryptedPassword}
-      >
-        <Animated.View
-          style={{
-            backgroundColor: getBackgroundColor("password"),
-            borderRadius: 8,
-            padding: 10,
-            marginTop: 4,
-            marginBottom: 6,
-          }}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <Text style={{ fontSize: 16, color: "#000", fontWeight: "500" }}>
-              {decryptedPassword
-                ? showPassword
-                  ? decryptedPassword
-                  : "••••••••"
-                : decryptionError
-                ? "Failed to decrypt"
-                : "N/A"}
-            </Text>
-            {decryptedPassword ? (
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                <Text
-                  style={{
-                    color: "#007AFF",
-                    fontWeight: "600",
-                    fontSize: 14,
-                  }}
-                >
-                  {showPassword ? "Hide" : "Show"}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        </Animated.View>
-      </TouchableOpacity>
-      {decryptedPassword ? (
-        <Text style={{ fontSize: 12, color: "#666", textAlign: "right" }}>
-          Tap to copy
-        </Text>
-      ) : null}
-
-      {/* OTP Code */}
-      {data?.value ? (
-        <>
-          <Text
-            style={{
-              fontWeight: "600",
-              fontSize: 15,
-              color: "#333",
-              marginTop: 24,
-            }}
-          >
-            One-Time Password
-          </Text>
+        {/* Action Buttons */}
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {/* Favorite Button */}
           <TouchableOpacity
-            onPress={() => copyToClipboard(otpCode, "otp")}
+            onPress={toggleFavorite}
             activeOpacity={0.8}
-            disabled={otpCode === "N/A" || otpCode === "Invalid OTP" || otpCode === "Generating..."}
+            style={{
+              width: 40,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 8,
+            }}
           >
-            <Animated.View
-              style={{
-                backgroundColor: getBackgroundColor("otp"),
-                borderRadius: 8,
-                paddingVertical: 18,
-                alignItems: "center",
-                marginTop: 4,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 32,
-                  letterSpacing: 3,
-                  fontWeight: "bold",
-                  color: otpCode === "Invalid OTP" || otpCode === "N/A" ? "#999" : "#000",
-                }}
-              >
-                {otpCode}
-              </Text>
-            </Animated.View>
+            <Ionicons
+              name={isFavorite ? "star" : "star-outline"}
+              size={20}
+              color={isFavorite ? "#FFC107" : "#000"}
+            />
           </TouchableOpacity>
 
-          {/* Progress Bar */}
-          {otpCode !== "N/A" && otpCode !== "Invalid OTP" && otpCode !== "Generating..." && (
-            <>
-              <View
-                style={{
-                  height: 6,
-                  backgroundColor: "#ddd",
-                  borderRadius: 4,
-                  overflow: "hidden",
-                  marginTop: 8,
-                }}
-              >
-                <Animated.View
-                  style={{
-                    height: "100%",
-                    width: barWidth,
-                    backgroundColor: "#007AFF",
-                    borderRadius: 4,
-                  }}
-                />
-              </View>
+          {/* Edit Button */}
+          <TouchableOpacity
+            onPress={() => setIsEditing(true)}
+            activeOpacity={0.8}
+            style={{
+              width: 40,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 8,
+            }}
+          >
+            <Ionicons name="pencil-outline" size={20} color="#000" />
+          </TouchableOpacity>
 
+          {/* Delete Button */}
+          <TouchableOpacity
+            onPress={handleDelete}
+            activeOpacity={0.8}
+            style={{
+              width: 40,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 8,
+            }}
+          >
+            <Ionicons name="trash-outline" size={20} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 50 }}
+      >
+        {/* Decryption Error Banner */}
+        {decryptionError && (
+          <View
+            style={{
+              backgroundColor: "#fff3cd",
+              borderRadius: 8,
+              padding: 12,
+              margin: 16,
+              borderLeftWidth: 4,
+              borderLeftColor: "#ff9800",
+            }}
+          >
+            <Text style={{ color: "#856404", fontWeight: "600", fontSize: 14 }}>
+              ⚠️ {decryptionError}
+            </Text>
+          </View>
+        )}
+
+        <View style={{ padding: 24, gap: 24 }}>
+          {/* Account Header Section */}
+          <View
+            style={{
+              borderBottomWidth: 0.613,
+              borderBottomColor: "#e5e7eb",
+              paddingBottom: 16,
+              flexDirection: "row",
+              gap: 16,
+              alignItems: "flex-start",
+            }}
+          >
+            {/* Account Icon */}
+            <View
+              style={{
+                width: 76,
+                height: 76,
+                borderRadius: 16,
+                backgroundColor: "#f3f4f6",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {(() => {
+                const providerName = data?.accountName || "";
+                const formatted = providerName.toLowerCase().replace(/\s+/g, "");
+                const iconKey = `si${formatted.charAt(0).toUpperCase()}${formatted.slice(1)}`;
+                const providerIcon: any = (icons as any)[iconKey] || null;
+
+                if (providerIcon) {
+                  return (
+                    <View
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 8,
+                        backgroundColor: `#${providerIcon.hex}`,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Svg width={28} height={28} viewBox="0 0 24 24">
+                        <Path fill="#fff" d={providerIcon.path} />
+                      </Svg>
+                    </View>
+                  );
+                }
+
+                const initials = providerName
+                  ? providerName.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase()
+                  : "??";
+                return (
+                  <Text style={{ color: "#555", fontWeight: "700", fontSize: 24 }}>
+                    {initials}
+                  </Text>
+                );
+              })()}
+            </View>
+
+            {/* Account Name and Email */}
+            <View style={{ flex: 1, justifyContent: "center" }}>
               <Text
                 style={{
-                  fontSize: 12,
-                  textAlign: "center",
-                  color: "#666",
-                  marginTop: 4,
+                  fontSize: 24,
+                  color: "#0a0a0a",
+                  fontWeight: "500",
+                  lineHeight: 32,
+                  marginBottom: 4,
                 }}
               >
-                Refreshes every {otpPeriod}s • Tap any field to copy
+                {data?.accountName || "N/A"}
               </Text>
-            </>
-          )}
-        </>
-      ) : null}
+              <Text
+                style={{
+                  fontSize: 16,
+                  color: "#6a7282",
+                  lineHeight: 24,
+                }}
+              >
+                {data?.username || ""}
+              </Text>
+            </View>
+          </View>
 
-      {/* Notes */}
-      <Text
-        style={{
-          fontWeight: "600",
-          fontSize: 15,
-          color: "#333",
-          marginTop: 24,
-        }}
-      >
-        Notes
-      </Text>
-      <Animated.View
-        style={{
-          backgroundColor: getBackgroundColor("notes"),
-          borderRadius: 8,
-          padding: 10,
-          marginTop: 4,
-        }}
-      >
-        <TextInput
-          value={notesText}
-          onChangeText={setNotesText}
-          placeholder="Add notes..."
-          placeholderTextColor="#999"
-          multiline
-          numberOfLines={4}
-          editable={false}
-          style={{
-            minHeight: 88,
-            textAlignVertical: "top",
-            color: "#000",
-            fontSize: 15,
-          }}
-        />
-      </Animated.View>
-    </ScrollView>
+          {/* OTP Card Section */}
+          {data?.value && otpCode !== "N/A" && otpCode !== "Invalid OTP" && otpCode !== "Generating..." ? (
+            <View
+              style={{
+                borderWidth: 0.613,
+                borderColor: "#dbeafe",
+                borderRadius: 14,
+                padding: 24.609,
+                backgroundColor: "#eff6ff",
+                gap: 16,
+              }}
+            >
+              {/* OTP Header */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <View
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: "#155dfc",
+                      opacity: 0.64,
+                    }}
+                  />
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: "#364153",
+                      lineHeight: 20,
+                    }}
+                  >
+                    Authentication Code
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    backgroundColor: "#dbeafe",
+                    borderRadius: 20,
+                    paddingHorizontal: 12,
+                    paddingVertical: 4,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <Ionicons name="time-outline" size={12} color="#1447e6" />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: "#1447e6",
+                      fontWeight: "500",
+                      lineHeight: 16,
+                    }}
+                  >
+                    {remainingSeconds}s
+                  </Text>
+                </View>
+              </View>
+
+              {/* OTP Code Display */}
+              <View style={{ gap: 16 }}>
+                <View
+                  style={{
+                    height: 48,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 48,
+                      color: "#155dfc",
+                      lineHeight: 48,
+                      letterSpacing: 4.8,
+                      fontWeight: "400",
+                    }}
+                  >
+                    {otpDisplay.firstPart}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 48,
+                      color: "#99a1af",
+                      lineHeight: 48,
+                      letterSpacing: 4.8,
+                      fontWeight: "400",
+                    }}
+                  >
+                    {otpDisplay.secondPart}
+                  </Text>
+                </View>
+
+                {/* Progress Bar */}
+                <View
+                  style={{
+                    height: 8,
+                    backgroundColor: "#e5e7eb",
+                    borderRadius: 4,
+                    overflow: "hidden",
+                  }}
+                >
+                  <Animated.View
+                    style={{
+                      height: "100%",
+                      width: progressBarWidth,
+                      backgroundColor: "#155dfc",
+                      borderRadius: 4,
+                    }}
+                  />
+                </View>
+
+                {/* Copy Code Button */}
+                <TouchableOpacity
+                  onPress={() => copyToClipboard(otpCode, "otp")}
+                  activeOpacity={0.8}
+                  style={{
+                    height: 32,
+                    backgroundColor: "#fff",
+                    borderWidth: 0.613,
+                    borderColor: "#bedbff",
+                    borderRadius: 8,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                  }}
+                >
+                  <Ionicons name="copy-outline" size={16} color="#0a0a0a" />
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: "#0a0a0a",
+                      fontWeight: "500",
+                      lineHeight: 20,
+                    }}
+                  >
+                    Copy Code
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
+
+          {/* Fields Section */}
+          <View style={{ gap: 16 }}>
+            {/* Password Field */}
+            <View style={{ gap: 8 }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: "#4a5565",
+                  fontWeight: "500",
+                  lineHeight: 20,
+                }}
+              >
+                Password
+              </Text>
+              <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                <View
+                  style={{
+                    flex: 1,
+                    height: 44,
+                    backgroundColor: "#f9fafb",
+                    borderRadius: 10,
+                    paddingHorizontal: 16,
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: "#0a0a0a",
+                      lineHeight: 20,
+                    }}
+                  >
+                    {decryptedPassword
+                      ? showPassword
+                        ? decryptedPassword
+                        : "••••••••••••"
+                      : decryptionError
+                      ? "Failed to decrypt"
+                      : "N/A"}
+                  </Text>
+                </View>
+                {decryptedPassword && (
+                  <>
+                    <TouchableOpacity
+                      onPress={() => setShowPassword(!showPassword)}
+                      activeOpacity={0.8}
+                      style={{
+                        width: 48,
+                        height: 44,
+                        backgroundColor: "#fff",
+                        borderWidth: 0.613,
+                        borderColor: "rgba(0,0,0,0.1)",
+                        borderRadius: 8,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Ionicons
+                        name={showPassword ? "eye-off-outline" : "eye-outline"}
+                        size={20}
+                        color="#000"
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => copyToClipboard(decryptedPassword, "password")}
+                      activeOpacity={0.8}
+                      style={{
+                        width: 48,
+                        height: 44,
+                        backgroundColor: "#fff",
+                        borderWidth: 0.613,
+                        borderColor: "rgba(0,0,0,0.1)",
+                        borderRadius: 8,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Ionicons name="copy-outline" size={20} color="#000" />
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            </View>
+
+            {/* Website Field */}
+            {data?.websiteUrl && (
+              <View style={{ gap: 8 }}>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    color: "#4a5565",
+                    fontWeight: "500",
+                    lineHeight: 20,
+                  }}
+                >
+                  Website
+                </Text>
+                <TouchableOpacity
+                  onPress={() => openWebsite(data?.websiteUrl)}
+                  activeOpacity={0.8}
+                  style={{
+                    height: 48,
+                    backgroundColor: "#f9fafb",
+                    borderRadius: 10,
+                    paddingHorizontal: 16,
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: "#155dfc",
+                      lineHeight: 20,
+                    }}
+                  >
+                    {data.websiteUrl}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Username Field */}
+            <View style={{ gap: 8 }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: "#4a5565",
+                  fontWeight: "500",
+                  lineHeight: 20,
+                }}
+              >
+                Username
+              </Text>
+              <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                <View
+                  style={{
+                    flex: 1,
+                    height: 44,
+                    backgroundColor: "#f9fafb",
+                    borderRadius: 10,
+                    paddingHorizontal: 16,
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: "#0a0a0a",
+                      lineHeight: 20,
+                    }}
+                  >
+                    {data?.username || "N/A"}
+                  </Text>
+                </View>
+                {data?.username && (
+                  <TouchableOpacity
+                    onPress={() => copyToClipboard(data.username, "username")}
+                    activeOpacity={0.8}
+                    style={{
+                      width: 48,
+                      height: 44,
+                      backgroundColor: "#fff",
+                      borderWidth: 0.613,
+                      borderColor: "rgba(0,0,0,0.1)",
+                      borderRadius: 8,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="copy-outline" size={20} color="#000" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            {/* Notes Field */}
+            <View style={{ gap: 8 }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: "#4a5565",
+                  fontWeight: "500",
+                  lineHeight: 20,
+                }}
+              >
+                Notes
+              </Text>
+              <View
+                style={{
+                  minHeight: 44,
+                  backgroundColor: "#f9fafb",
+                  borderRadius: 10,
+                  paddingHorizontal: 16,
+                  paddingVertical: 12,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    color: "#0a0a0a",
+                    lineHeight: 20,
+                  }}
+                >
+                  {notesText || ""}
+                </Text>
+              </View>
+            </View>
+
+            {/* Created/Modified Dates */}
+            {(data?.createdAt || data?.modifiedAt) && (
+              <View
+                style={{
+                  borderTopWidth: 0.613,
+                  borderTopColor: "#e5e7eb",
+                  paddingTop: 16.6,
+                  gap: 4,
+                }}
+              >
+                {data.createdAt && (
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: "#99a1af",
+                      lineHeight: 16,
+                    }}
+                  >
+                    Created: {formatDate(data.createdAt)}
+                  </Text>
+                )}
+                {data.modifiedAt && (
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: "#99a1af",
+                      lineHeight: 16,
+                    }}
+                  >
+                    Modified: {formatDate(data.modifiedAt)}
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
+      </ScrollView>
+    </View>
   );
 }

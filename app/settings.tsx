@@ -1,4 +1,6 @@
-import React, { useEffect, useRef, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { useNavigation, useRouter } from "expo-router";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -11,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   decryptWithMasterKey,
   encryptWithMasterKey,
@@ -31,10 +34,14 @@ const USER_ACCOUNT_KEYS = "userAccountKeys";
 type BackupHistoryItem = { id: string; gistId: string; atIso: string; note?: string };
 
 export default function SettingsScreen() {
+  const router = useRouter();
+  const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [githubToken, setGithubToken] = useState<string>("");
   const [hasToken, setHasToken] = useState<boolean>(false);
   const [showToken, setShowToken] = useState<boolean>(false);
   const [maskedToken, setMaskedToken] = useState<string>("");
+  const [gistIdInput, setGistIdInput] = useState<string>("");
   const [gistId, setGistId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
   const [isWorking, setIsWorking] = useState(false);
@@ -46,6 +53,13 @@ export default function SettingsScreen() {
   const syncProgress = useRef(new Animated.Value(0)).current;
 
 
+
+  // Hide default header and use custom header
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerShown: false,
+    });
+  }, [navigation]);
 
   // Load auto-restore setting
   useEffect(() => {
@@ -127,7 +141,10 @@ export default function SettingsScreen() {
           setMaskedToken("");
         }
 
-        if (g) setGistId(g);
+        if (g) {
+          setGistId(g);
+          setGistIdInput(g);
+        }
         if (last) setLastBackup(last);
         if (hist) {
           try {
@@ -203,162 +220,245 @@ export default function SettingsScreen() {
   };
 
   const performTokenSave = async (token: string) => {
-  await Storage.setItemAsync(GITHUB_TOKEN_KEY, token);
-  setHasToken(true);
-  setMaskedToken("ghp_" + "•".repeat(32) + token.slice(-4));
-  setGithubToken(token);
-  setShowToken(false);
-  
-  // Auto-restore from existing gist if found
-  setStatus("Checking for existing backups...");
-  try {
-    const { findBackupGistId, getGistBackup } = await import("./utils/githubBackup");
-    const { importAllAccounts } = await import("./utils/backupUtils");
+    await Storage.setItemAsync(GITHUB_TOKEN_KEY, token);
+    setHasToken(true);
+    setMaskedToken("ghp_" + "•".repeat(32) + token.slice(-4));
+    setGithubToken(token);
+    setShowToken(false);
     
-    // Look for existing gist
-    const existingGistId = await findBackupGistId(token);
+    // Save Gist ID if provided
+    if (gistIdInput.trim()) {
+      await Storage.setItemAsync(BACKUP_GIST_ID_KEY, gistIdInput.trim());
+      setGistId(gistIdInput.trim());
+    }
     
-    if (existingGistId) {
-      const shouldRestore = Platform.OS === 'web'
-        ? window.confirm(
-            `Found existing backup in your GitHub Gists!\n\n` +
-            `Gist ID: ${existingGistId}\n\n` +
-            `Would you like to restore your accounts from this backup?`
-          )
-        : await new Promise<boolean>((resolve) => {
-            Alert.alert(
-              "Backup Found!",
-              `Found existing backup (Gist ID: ${existingGistId})\n\nRestore your accounts from this backup?`,
-              [
-                { text: "Not Now", style: "cancel", onPress: () => resolve(false) },
-                { text: "Restore", onPress: () => resolve(true) },
-              ]
-            );
-          });
-
-      if (shouldRestore) {
-        setStatus("Restoring accounts from backup...");
-        
-        // Fetch and import backup
-        const cipherText = await getGistBackup(token);
-        if (cipherText) {
-          await importAllAccounts(cipherText);
-          
+    // Auto-restore from existing gist if found
+    setStatus("Checking for existing backups...");
+    try {
+      const { findBackupGistId, getGistBackup } = await import("./utils/githubBackup");
+      const { importAllAccounts } = await import("./utils/backupUtils");
+      
+      // Look for existing gist
+      const existingGistId = await findBackupGistId(token);
+      
+      if (existingGistId) {
+        // Update gist ID if found
+        if (!gistIdInput.trim()) {
           setGistId(existingGistId);
-          const count = (await Storage.getItemAsync("userAccountKeys"))?.split(",").length || 0;
-          setStatus(`Restored ${count} account(s) successfully!`);
+          setGistIdInput(existingGistId);
+          await Storage.setItemAsync(BACKUP_GIST_ID_KEY, existingGistId);
+        }
+        
+        const shouldRestore = Platform.OS === 'web'
+          ? window.confirm(
+              `Found existing backup in your GitHub Gists!\n\n` +
+              `Gist ID: ${existingGistId}\n\n` +
+              `Would you like to restore your accounts from this backup?`
+            )
+          : await new Promise<boolean>((resolve) => {
+              Alert.alert(
+                "Backup Found!",
+                `Found existing backup (Gist ID: ${existingGistId})\n\nRestore your accounts from this backup?`,
+                [
+                  { text: "Not Now", style: "cancel", onPress: () => resolve(false) },
+                  { text: "Restore", onPress: () => resolve(true) },
+                ]
+              );
+            });
+
+        if (shouldRestore) {
+          setStatus("Restoring accounts from backup...");
           
-          const successMsg = `Successfully restored ${count} account(s) from backup!`;
-          if (Platform.OS === 'web') {
-            window.alert(successMsg);
+          // Fetch and import backup
+          const cipherText = await getGistBackup(token);
+          if (cipherText) {
+            await importAllAccounts(cipherText);
+            
+            setGistId(existingGistId);
+            setGistIdInput(existingGistId);
+            const keysString = await Storage.getItemAsync("userAccountKeys");
+            const keys = keysString ? JSON.parse(keysString) : [];
+            const count = keys.length || 0;
+            setStatus(`Restored ${count} account(s) successfully!`);
+            
+            const successMsg = `Successfully restored ${count} account(s) from backup!`;
+            if (Platform.OS === 'web') {
+              window.alert(successMsg);
+            } else {
+              Alert.alert("Restore Complete", successMsg);
+            }
           } else {
-            Alert.alert("Restore Complete", successMsg);
+            throw new Error("Failed to fetch backup content");
           }
         } else {
-          throw new Error("Failed to fetch backup content");
+          setStatus("Token saved. Auto-sync enabled.");
+          
+          const msg = "GitHub token saved. Auto-sync is now enabled.";
+          if (Platform.OS === 'web') {
+            window.alert(msg);
+          } else {
+            Alert.alert("Saved", msg);
+          }
         }
       } else {
-        setGistId(existingGistId);
         setStatus("Token saved. Auto-sync enabled.");
         
-        const msg = "GitHub token saved. Auto-sync is now enabled.";
+        const msg = "GitHub token saved. Auto-sync is now enabled. Your accounts will be automatically backed up.";
         if (Platform.OS === 'web') {
           window.alert(msg);
         } else {
           Alert.alert("Saved", msg);
         }
       }
-    } else {
-      setStatus("Token saved. Auto-sync enabled.");
+    } catch (err) {
+      console.error("Auto-restore check failed:", err);
+      setStatus("Token saved (auto-restore failed)");
       
-      const msg = "GitHub token saved. Auto-sync is now enabled. Your accounts will be automatically backed up.";
+      const msg = "Token saved, but couldn't check for existing backups. You can manually restore from the Restore screen.";
       if (Platform.OS === 'web') {
         window.alert(msg);
       } else {
         Alert.alert("Saved", msg);
       }
     }
-  } catch (err) {
-    console.error("Auto-restore check failed:", err);
-    setStatus("Token saved (auto-restore failed)");
-    
-    const msg = "Token saved, but couldn't check for existing backups. You can manually restore from the Restore screen.";
-    if (Platform.OS === 'web') {
-      window.alert(msg);
-    } else {
-      Alert.alert("Saved", msg);
-    }
-  }
-};
+  };
 
-  // Remove token AND clear all backup metadata
-  const removeToken = async () => {
+  // Clear all data - accounts, token, and backup metadata
+  const clearAllData = async () => {
     const confirmMessage = 
-      "⚠️ WARNING: This will:\n\n" +
-      "• Remove your GitHub token\n" +
-      "• Clear all backup metadata\n" +
-      "• Make existing encrypted data unreadable\n\n" +
-      "Your saved accounts will NOT be deleted, but you won't be able to decrypt passwords/OTP codes until you add the token back.\n\n" +
-      "Continue?";
+      "⚠️ WARNING: This will permanently delete:\n\n" +
+      "• All your accounts\n" +
+      "• Your GitHub token\n" +
+      "• All backup metadata\n" +
+      "• All encrypted data\n\n" +
+      "This action cannot be undone!\n\n" +
+      "Are you absolutely sure?";
     
     if (Platform.OS === 'web') {
       const confirmed = window.confirm(confirmMessage);
       if (!confirmed) return;
-      await performRemoval();
+      await performClearAll();
     } else {
       Alert.alert(
-        "Remove Token & Clear Backups",
+        "Clear All Data",
         confirmMessage,
         [
           { text: "Cancel", style: "cancel" },
-          { text: "Remove", style: "destructive", onPress: performRemoval },
+          { text: "Clear All", style: "destructive", onPress: performClearAll },
         ]
       );
     }
   };
 
-  const performRemoval = async () => {
+  const performClearAll = async () => {
     try {
-      console.log("🗑️ Starting token removal...");
+      console.log("🗑️ Starting clear all data...");
       
+      // Delete all accounts
+      const keysString = await Storage.getItemAsync(USER_ACCOUNT_KEYS);
+      const keys: string[] = keysString ? JSON.parse(keysString) : [];
+      for (const key of keys) {
+        await Storage.deleteItemAsync(key);
+      }
+      await Storage.deleteItemAsync(USER_ACCOUNT_KEYS);
+      
+      // Delete token and backup metadata
       await Storage.deleteItemAsync(GITHUB_TOKEN_KEY);
       await Storage.deleteItemAsync(BACKUP_GIST_ID_KEY);
       await Storage.deleteItemAsync(LAST_BACKUP_KEY);
       await Storage.deleteItemAsync(BACKUP_HISTORY_KEY);
 
-      console.log("✅ Deletion completed");
-
-      const verify = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
-      console.log("🔍 Verification:", verify === null ? "✅ Removed" : "❌ Still exists");
-
-      if (verify !== null) {
-        throw new Error("Token still present after deletion.");
-      }
+      console.log("✅ All data cleared");
 
       setHasToken(false);
       setMaskedToken("");
       setGistId(null);
+      setGistIdInput("");
       setLastBackup(null);
       setHistory([]);
       setStatus("");
       setGithubToken("");
       setShowToken(false);
 
-      const msg = "GitHub token and backup metadata removed successfully.";
+      const msg = "All data has been cleared successfully.";
       if (Platform.OS === 'web') {
         window.alert(msg);
       } else {
-        Alert.alert("Removed", msg);
+        Alert.alert("Cleared", msg);
       }
+      
+      // Navigate back to home
+      router.replace("/");
     } catch (err: any) {
-      console.error("❌ Remove token failed:", err);
-      const msg = err.message || "Could not remove token and metadata.";
+      console.error("❌ Clear all data failed:", err);
+      const msg = err.message || "Could not clear all data.";
       if (Platform.OS === 'web') {
         window.alert(`Failed: ${msg}`);
       } else {
-        Alert.alert("Remove failed", msg);
+        Alert.alert("Clear failed", msg);
       }
     }
+  };
+
+  // Lock vault - clear master key to require re-authentication
+  const lockVault = async () => {
+    const confirmMessage = 
+      "Lock Vault?\n\n" +
+      "This will clear your encryption key. You'll need to add your GitHub token again to decrypt your data.\n\n" +
+      "Your accounts will remain, but you won't be able to view passwords/OTP codes until you unlock.";
+    
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(confirmMessage);
+      if (!confirmed) return;
+      await performLockVault();
+    } else {
+      Alert.alert(
+        "Lock Vault",
+        confirmMessage,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Lock", style: "destructive", onPress: performLockVault },
+        ]
+      );
+    }
+  };
+
+  const performLockVault = async () => {
+    try {
+      const { deleteMasterKey } = await import("./utils/crypto");
+      await deleteMasterKey();
+      
+      // Clear token to force re-entry
+      await Storage.deleteItemAsync(GITHUB_TOKEN_KEY);
+      await Storage.deleteItemAsync(BACKUP_GIST_ID_KEY);
+      
+      setHasToken(false);
+      setMaskedToken("");
+      setGistId(null);
+      setGistIdInput("");
+      setGithubToken("");
+      setShowToken(false);
+
+      const msg = "Vault locked. Add your GitHub token to unlock.";
+      if (Platform.OS === 'web') {
+        window.alert(msg);
+      } else {
+        Alert.alert("Vault Locked", msg);
+      }
+    } catch (err: any) {
+      console.error("❌ Lock vault failed:", err);
+      const msg = err.message || "Could not lock vault.";
+      if (Platform.OS === 'web') {
+        window.alert(`Failed: ${msg}`);
+      } else {
+        Alert.alert("Lock failed", msg);
+      }
+    }
+  };
+
+  // Sync function - triggers backup
+  const handleSync = async () => {
+    await exportAllAccounts();
   };
 
   // Export all accounts -> encrypt -> upload gist
@@ -536,6 +636,7 @@ export default function SettingsScreen() {
           console.log("🔄 Gist deleted, retrying...");
           await Storage.deleteItemAsync(BACKUP_GIST_ID_KEY);
           setGistId(null);
+          setGistIdInput("");
           
           const retryRes = await fetch(`https://api.github.com/gists`, {
             method: "POST",
@@ -576,6 +677,7 @@ export default function SettingsScreen() {
       await Storage.setItemAsync(BACKUP_GIST_ID_KEY, targetGistId!);
       await Storage.setItemAsync(LAST_BACKUP_KEY, exportedAt);
       setGistId(targetGistId!);
+      setGistIdInput(targetGistId!);
       setLastBackup(exportedAt);
 
       const histItem: BackupHistoryItem = {
@@ -681,6 +783,7 @@ export default function SettingsScreen() {
 
       await Storage.setItemAsync(BACKUP_GIST_ID_KEY, latestGistId);
       setGistId(latestGistId);
+      setGistIdInput(latestGistId);
 
       setStatus("Fetching latest backup...");
       const gistRes = await fetch(`https://api.github.com/gists/${latestGistId}`, {
@@ -758,410 +861,422 @@ export default function SettingsScreen() {
 
   if (isLoadingToken) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#f8f9fa", justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color="#007AFF" />
+      <View style={{ flex: 1, backgroundColor: "#fff", justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color="#000" />
       </View>
     );
   }
 
   return (
-    <ScrollView
-      contentContainerStyle={{ padding: 20, backgroundColor: "#f8f9fa", flexGrow: 1, paddingBottom: 50 }}
-    >
-      <Text style={{ fontSize: 28, fontWeight: "700", marginBottom: 8, color: "#000" }}>
-        Settings
-      </Text>
-      <Text style={{ fontSize: 15, color: "#666", marginBottom: 24, lineHeight: 22 }}>
-        Configure encryption and manage backups
-      </Text>
-
-      {/* Info Banner */}
+    <View style={{ flex: 1, backgroundColor: "#fff" }}>
+      {/* Custom Header */}
       <View
         style={{
-          backgroundColor: "#e3f2fd",
-          borderRadius: 12,
-          padding: 16,
-          marginBottom: 20,
-          borderLeftWidth: 4,
-          borderLeftColor: "#2196F3",
+          borderBottomWidth: 0.613,
+          borderBottomColor: "#e5e7eb",
+          paddingTop: insets.top,
+          minHeight: 72.591,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 16,
+          paddingBottom: 12,
         }}
       >
-        <Text style={{ fontSize: 14, fontWeight: "600", color: "#1976D2", marginBottom: 8 }}>
-          ℹ️ About GitHub Token
-        </Text>
-        <Text style={{ fontSize: 14, color: "#1565C0", lineHeight: 20 }}>
-          Your token is used for:{"\n"}
-          • Encrypting passwords & OTP secrets{"\n"}
-          • Creating and restoring backups{"\n"}
-          • Syncing data across devices{"\n\n"}
-          It never leaves your device.
-        </Text>
+        {/* Back Button */}
+        <TouchableOpacity
+          onPress={() => router.back()}
+          activeOpacity={0.8}
+          style={{
+            width: 36,
+            height: 40,
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 8,
+          }}
+        >
+          <Ionicons name="arrow-back" size={20} color="#000" />
+        </TouchableOpacity>
+
+        {/* Title */}
+        <View style={{ flex: 1, alignItems: "center" }}>
+          <Text style={{ fontSize: 17, fontWeight: "600", color: "#000" }}>
+            Settings
+          </Text>
+        </View>
+
+        {/* Spacer to balance the layout */}
+        <View style={{ width: 36 }} />
       </View>
 
-      {/* GitHub Token Section */}
-      <View style={{ backgroundColor: "#fff", padding: 16, borderRadius: 12, marginBottom: 16 }}>
-        <Text style={{ fontSize: 18, fontWeight: "600", marginBottom: 12, color: "#000" }}>
-          GitHub Personal Access Token
-        </Text>
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 50 }}
+        style={{ flex: 1 }}
+      >
 
-        {hasToken ? (
-          <>
-            <View style={{ marginBottom: 12 }}>
-              <Text style={{ fontSize: 14, color: "#666", marginBottom: 6 }}>
-                Current token:
+        {/* GitHub Gist Sync Section */}
+        <View style={{ paddingTop: 24, paddingHorizontal: 24 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 16, gap: 12 }}>
+            <View style={{ 
+              backgroundColor: "#f3f4f6", 
+              width: 40, 
+              height: 40, 
+              borderRadius: 10, 
+              justifyContent: "center", 
+              alignItems: "center" 
+            }}>
+              <Ionicons name="git-branch-outline" size={20} color="#0a0a0a" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 2 }}>
+                GitHub Gist Sync
               </Text>
-              <View style={{ 
-                backgroundColor: "#f5f5f5", 
-                borderRadius: 8, 
-                padding: 10,
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center"
-              }}>
-                <Text style={{ 
-                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", 
-                  fontSize: 13,
-                  color: "#333",
-                  flex: 1
-                }}>
-                  {showToken ? githubToken : maskedToken}
-                </Text>
-                <TouchableOpacity onPress={() => setShowToken(!showToken)}>
-                  <Text style={{ color: "#007AFF", fontWeight: "600", fontSize: 14, marginLeft: 8 }}>
+              <Text style={{ fontSize: 12, color: "#6a7282" }}>
+                Sync your encrypted vault
+              </Text>
+            </View>
+          </View>
+
+          <View style={{ gap: 8, marginBottom: 16 }}>
+            {/* Access Token Input */}
+            <View>
+              <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 8 }}>
+                Access Token
+              </Text>
+              <TextInput
+                value={hasToken ? (showToken ? githubToken : maskedToken) : githubToken}
+                onChangeText={setGithubToken}
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                placeholderTextColor="#717182"
+                secureTextEntry={hasToken ? !showToken : false}
+                editable={!hasToken}
+                style={{
+                  backgroundColor: "#f9fafb",
+                  borderWidth: 0.6,
+                  borderColor: "#e5e7eb",
+                  borderRadius: 8,
+                  padding: 12,
+                  fontSize: 16,
+                  color: "#0a0a0a",
+                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+                }}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {hasToken && (
+                <TouchableOpacity
+                  onPress={() => setShowToken(!showToken)}
+                  style={{ alignSelf: "flex-end", marginTop: 4 }}
+                >
+                  <Text style={{ color: "#0a0a0a", fontSize: 12, fontWeight: "500" }}>
                     {showToken ? "Hide" : "Show"}
                   </Text>
                 </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Gist ID Input */}
+            <View>
+              <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 8 }}>
+                Gist ID
+              </Text>
+              <TextInput
+                value={gistIdInput}
+                onChangeText={setGistIdInput}
+                placeholder="Optional"
+                placeholderTextColor="#717182"
+                style={{
+                  backgroundColor: "#f9fafb",
+                  borderWidth: 0.6,
+                  borderColor: "#e5e7eb",
+                  borderRadius: 8,
+                  padding: 12,
+                  fontSize: 16,
+                  color: "#0a0a0a",
+                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+                }}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            {/* Auto Sync Toggle */}
+            <View style={{ 
+              flexDirection: "row", 
+              justifyContent: "space-between", 
+              alignItems: "center",
+              height: 36,
+            }}>
+              <Text style={{ fontSize: 14, color: "#0a0a0a" }}>
+                Auto Sync
+              </Text>
+              <Switch
+                value={autoRestoreEnabled}
+                onValueChange={toggleAutoRestore}
+                trackColor={{ false: "#cbced4", true: "#34C759" }}
+                thumbColor="#fff"
+                ios_backgroundColor="#cbced4"
+                disabled={!hasToken}
+              />
+            </View>
+
+            {/* Save and Sync Buttons */}
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+              <TouchableOpacity
+                onPress={saveToken}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#000",
+                  height: 44,
+                  borderRadius: 8,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+                disabled={isWorking}
+              >
+                {isWorking && status.includes("Checking") ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={{ color: "#fff", fontSize: 14, fontWeight: "500" }}>
+                    Save
+                  </Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSync}
+                style={{
+                  width: 66,
+                  backgroundColor: "#fff",
+                  borderWidth: 0.6,
+                  borderColor: "rgba(0,0,0,0.1)",
+                  height: 44,
+                  borderRadius: 8,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+                disabled={!hasToken || isWorking}
+              >
+                {isWorking && (status.includes("Encrypting") || status.includes("Uploading") || status.includes("Creating")) ? (
+                  <ActivityIndicator color="#0a0a0a" size="small" />
+                ) : (
+                  <Text style={{ color: "#0a0a0a", fontSize: 14, fontWeight: "500" }}>
+                    Sync
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* How to Create Token Guide */}
+          {!hasToken && (
+            <View style={{ 
+              marginTop: 24,
+              padding: 16,
+              backgroundColor: "#f9fafb",
+              borderRadius: 8,
+              borderWidth: 0.6,
+              borderColor: "#e5e7eb",
+            }}>
+              <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 12 }}>
+                How to Create a Token
+              </Text>
+
+              <View style={{ gap: 12 }}>
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: "500", color: "#0a0a0a", marginBottom: 4 }}>
+                    1. Go to GitHub Settings
+                  </Text>
+                  <Text style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}>
+                    Visit github.com/settings/tokens
+                  </Text>
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: "500", color: "#0a0a0a", marginBottom: 4 }}>
+                    2. Generate New Token
+                  </Text>
+                  <Text style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}>
+                    Click "Generate new token (classic)"
+                  </Text>
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: "500", color: "#0a0a0a", marginBottom: 4 }}>
+                    3. Configure Token
+                  </Text>
+                  <Text style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}>
+                    • Name: "2FA App" or similar{"\n"}
+                    • Expiration: No expiration (recommended){"\n"}
+                    • Scopes: Check "gist" for backups, or leave all unchecked for encryption only
+                  </Text>
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: "500", color: "#0a0a0a", marginBottom: 4 }}>
+                    4. Copy & Save
+                  </Text>
+                  <Text style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}>
+                    Copy the token (starts with ghp_) and paste it above. Save it in a password manager as backup!
+                  </Text>
+                </View>
               </View>
             </View>
-
-            <TouchableOpacity
-              onPress={removeToken}
-              style={{ 
-                backgroundColor: "#fff", 
-                borderWidth: 1,
-                borderColor: "#E63946",
-                paddingVertical: 12, 
-                borderRadius: 10, 
-                alignItems: "center" 
-              }}
-            >
-              <Text style={{ color: "#E63946", fontWeight: "600", fontSize: 15 }}>
-                Remove Token & Clear Metadata
-              </Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <TextInput
-              value={githubToken}
-              onChangeText={setGithubToken}
-              placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-              placeholderTextColor="#999"
-              secureTextEntry={!showToken}
-              style={{
-                borderWidth: 1,
-                borderColor: "#ddd",
-                borderRadius: 10,
-                padding: 12,
-                fontSize: 15,
-                marginBottom: 8,
-                backgroundColor: "#f9f9f9",
-                fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-              }}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            
-            <TouchableOpacity
-              onPress={() => setShowToken(!showToken)}
-              style={{ alignSelf: "flex-end", marginBottom: 12 }}
-            >
-              <Text style={{ color: "#007AFF", fontSize: 14, fontWeight: "600" }}>
-                {showToken ? "Hide Token" : "Show Token"}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={saveToken}
-              style={{ 
-                backgroundColor: "#007AFF", 
-                paddingVertical: 12, 
-                borderRadius: 10, 
-                alignItems: "center",
-                marginBottom: 8
-              }}
-            >
-              <Text style={{ color: "white", fontWeight: "600", fontSize: 15 }}>
-                Save Token
-              </Text>
-            </TouchableOpacity>
-
-            <Text style={{ fontSize: 13, color: "#666", marginTop: 4, lineHeight: 18 }}>
-              Create at: <Text style={{ fontWeight: "600", color: "#007AFF" }}>github.com/settings/tokens</Text>
-              {"\n"}No special permissions needed.
-            </Text>
-          </>
-        )}
-      </View>
-
-      {/* Warning when no token */}
-      {!hasToken && (
-        <View
-          style={{
-            backgroundColor: "#fff3cd",
-            borderWidth: 1,
-            borderColor: "#ffc107",
-            padding: 14,
-            borderRadius: 12,
-            marginBottom: 16,
-          }}
-        >
-          <Text style={{ color: "#856404", fontSize: 14, lineHeight: 20 }}>
-            ⚠️ <Text style={{ fontWeight: "600" }}>Token required:</Text> Add a GitHub token above to decrypt passwords/OTP codes and enable backups.
-          </Text>
+          )}
         </View>
-      )}
 
-      {/* Auto-Restore Toggle Section */}
-      {hasToken && (
-        <View style={{ backgroundColor: "#fff", padding: 16, borderRadius: 12, marginBottom: 16 }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 18, fontWeight: "600", color: "#000", marginBottom: 4 }}>
-                Auto-Restore
-              </Text>
-              <Text style={{ fontSize: 13, color: "#666", lineHeight: 18 }}>
-                Automatically sync accounts from cloud when changes are detected
-              </Text>
-            </View>
-            
-            {/* Import Switch from react-native at the top */}
-            <Switch
-              value={autoRestoreEnabled}
-              onValueChange={toggleAutoRestore}
-              trackColor={{ false: "#d1d1d6", true: "#34C759" }}
-              thumbColor="#fff"
-              ios_backgroundColor="#d1d1d6"
-            />
-          </View>
+        {/* Divider */}
+        <View style={{ height: 1, backgroundColor: "rgba(0,0,0,0.1)", marginVertical: 32 }} />
 
-          {/* Sync Status */}
-          {autoRestoreEnabled && (
-            <View
+        {/* Data Management Section */}
+        <View style={{ paddingHorizontal: 24 }}>
+          <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 16 }}>
+            Data Management
+          </Text>
+          <View style={{ gap: 8 }}>
+            {/* Export Vault */}
+            <TouchableOpacity
+              onPress={exportAllAccounts}
               style={{
-                marginTop: 12,
-                paddingTop: 12,
-                borderTopWidth: 1,
-                borderTopColor: "#f0f0f0",
+                backgroundColor: "#fff",
+                borderWidth: 0.6,
+                borderColor: "rgba(0,0,0,0.1)",
+                height: 44,
+                borderRadius: 8,
                 flexDirection: "row",
                 alignItems: "center",
+                paddingHorizontal: 12,
+              }}
+              disabled={!hasToken || isWorking}
+            >
+              <Ionicons name="download-outline" size={16} color="#0a0a0a" />
+              <Text style={{ 
+                color: "#0a0a0a", 
+                fontSize: 14, 
+                fontWeight: "500", 
+                marginLeft: 12,
+                opacity: (!hasToken || isWorking) ? 0.5 : 1
+              }}>
+                Export Vault
+              </Text>
+            </TouchableOpacity>
+
+            {/* Import Vault */}
+            <TouchableOpacity
+              onPress={importFromLatestBackup}
+              style={{
+                backgroundColor: "#fff",
+                borderWidth: 0.6,
+                borderColor: "rgba(0,0,0,0.1)",
+                height: 44,
+                borderRadius: 8,
+                flexDirection: "row",
+                alignItems: "center",
+                paddingHorizontal: 12,
+              }}
+              disabled={!hasToken || isWorking}
+            >
+              <Ionicons name="cloud-upload-outline" size={16} color="#0a0a0a" />
+              <Text style={{ 
+                color: "#0a0a0a", 
+                fontSize: 14, 
+                fontWeight: "500", 
+                marginLeft: 12,
+                opacity: (!hasToken || isWorking) ? 0.5 : 1
+              }}>
+                Import Vault
+              </Text>
+            </TouchableOpacity>
+
+            {/* Clear All Data */}
+            <TouchableOpacity
+              onPress={clearAllData}
+              style={{
+                backgroundColor: "#fff",
+                borderWidth: 0.6,
+                borderColor: "rgba(0,0,0,0.1)",
+                height: 44,
+                borderRadius: 8,
+                flexDirection: "row",
+                alignItems: "center",
+                paddingHorizontal: 12,
               }}
             >
-              <View
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 4,
-                  backgroundColor: 
-                    syncStatus === "Syncing..." ? "#2196F3" :
-                    syncStatus === "Up to date" ? "#4CAF50" :
-                    "#9E9E9E",
-                  marginRight: 8,
-                }}
-              />
-              <Text style={{ fontSize: 13, color: "#666" }}>
-                {syncStatus === "Idle" ? "Monitoring for changes..." : syncStatus}
+              <Ionicons name="trash-outline" size={16} color="#e7000b" />
+              <Text style={{ color: "#e7000b", fontSize: 14, fontWeight: "500", marginLeft: 12 }}>
+                Clear All Data
               </Text>
-            </View>
-          )}
+            </TouchableOpacity>
+          </View>
+        </View>
 
-          {/* Info */}
-          <View
+        {/* Divider */}
+        <View style={{ height: 1, backgroundColor: "rgba(0,0,0,0.1)", marginVertical: 32 }} />
+
+        {/* Security Section */}
+        <View style={{ paddingHorizontal: 24, marginBottom: 40 }}>
+          <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 16 }}>
+            Security
+          </Text>
+          <TouchableOpacity
+            onPress={lockVault}
             style={{
-              marginTop: 12,
-              padding: 12,
-              backgroundColor: "#f0f7ff",
+              backgroundColor: "#fff",
+              borderWidth: 0.6,
+              borderColor: "rgba(0,0,0,0.1)",
+              height: 44,
               borderRadius: 8,
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 12,
             }}
           >
-            <Text style={{ fontSize: 12, color: "#1976D2", lineHeight: 16 }}>
-              ℹ️ Checks for updates every 30 seconds. Your accounts will appear automatically on all devices.
+            <Ionicons name="lock-closed-outline" size={16} color="#0a0a0a" />
+            <Text style={{ color: "#0a0a0a", fontSize: 14, fontWeight: "500", marginLeft: 12 }}>
+              Lock Vault
             </Text>
-          </View>
+          </TouchableOpacity>
         </View>
-      )}
 
-      {/* Backup Section */}
-      <View style={{ backgroundColor: "#fff", padding: 16, borderRadius: 12, marginBottom: 16 }}>
-        <Text style={{ fontSize: 18, fontWeight: "600", marginBottom: 12, color: "#000" }}>
-          Backup & Restore
-        </Text>
-
-        <TouchableOpacity
-          onPress={exportAllAccounts}
-          style={{
-            backgroundColor: !hasToken || isWorking ? "#cccccc" : "#28a745",
-            paddingVertical: 14,
-            borderRadius: 10,
+        {/* Footer with App Version */}
+        <View style={{ alignItems: "center", marginTop: 32, marginBottom: 40 }}>
+          <View style={{
+            width: 48,
+            height: 48,
+            backgroundColor: "#000",
+            borderRadius: 16,
+            justifyContent: "center",
             alignItems: "center",
-            marginBottom: 12,
-          }}
-          disabled={!hasToken || isWorking}
-        >
-          {isWorking && (status.includes("Encrypting") || status.includes("Uploading") || status.includes("Creating")) ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={{ color: "white", fontWeight: "600", fontSize: 15, opacity: !hasToken ? 0.6 : 1 }}>
-              📤 Backup Now (Encrypted)
-            </Text>
-          )}
-        </TouchableOpacity>
+            marginBottom: 16,
+          }}>
+            <Ionicons name="shield-checkmark-outline" size={24} color="#fff" />
+          </View>
+          <Text style={{ fontSize: 12, color: "#99a1af", marginBottom: 4 }}>
+            AuthFactory 2026
+          </Text>
+          <Text style={{ fontSize: 12, color: "#99a1af" }}>
+            v1.0.0
+          </Text>
+        </View>
 
-        <TouchableOpacity
-          onPress={importFromLatestBackup}
-          style={{
-            backgroundColor: !hasToken || isWorking ? "#cccccc" : "#6c757d",
-            paddingVertical: 14,
-            borderRadius: 10,
-            alignItems: "center",
-          }}
-          disabled={!hasToken || isWorking}
-        >
-          {isWorking && (status.includes("Fetching") || status.includes("Decrypting") || status.includes("Searching")) ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={{ color: "white", fontWeight: "600", fontSize: 15, opacity: !hasToken ? 0.6 : 1 }}>
-              📥 Restore Latest Backup
-            </Text>
-          )}
-        </TouchableOpacity>
-
-        {gistId && (
+        {/* Status Display */}
+        {status && !status.includes("Checking") && (
           <View style={{ 
-            marginTop: 12, 
-            padding: 10, 
-            backgroundColor: "#f5f5f5", 
-            borderRadius: 8 
+            marginHorizontal: 24,
+            marginBottom: 16,
+            padding: 12,
+            backgroundColor: status.includes("Failed") || status.includes("failed") ? "#fee2e2" : "#d1fae5",
+            borderRadius: 8,
           }}>
-            <Text style={{ fontSize: 13, color: "#666" }}>
-              Backup Gist ID:
-            </Text>
             <Text style={{ 
-              fontSize: 13, 
-              color: "#333",
-              fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-              marginTop: 2
+              color: status.includes("Failed") || status.includes("failed") ? "#991b1b" : "#065f46",
+              fontSize: 13,
+              fontWeight: "500"
             }}>
-              {gistId}
+              {status}
             </Text>
           </View>
         )}
-      </View>
-
-      {/* Backup History */}
-      <View style={{ backgroundColor: "#fff", padding: 16, borderRadius: 12, marginBottom: 16 }}>
-        <Text style={{ fontSize: 18, fontWeight: "600", marginBottom: 12, color: "#000" }}>
-          Backup History
-        </Text>
-        
-        {lastBackup ? (
-          <Text style={{ color: "#333", marginBottom: 12, fontSize: 14 }}>
-            Last backup: <Text style={{ fontWeight: "600" }}>{new Date(lastBackup).toLocaleString()}</Text>
-          </Text>
-        ) : (
-          <Text style={{ color: "#999", marginBottom: 12, fontSize: 14 }}>
-            No backups yet
-          </Text>
-        )}
-
-        {history.length === 0 ? (
-          <Text style={{ color: "#999", fontSize: 14 }}>No history available</Text>
-        ) : (
-          history.map((h) => (
-            <View 
-              key={h.id} 
-              style={{ 
-                paddingVertical: 10, 
-                borderTopWidth: 1, 
-                borderTopColor: "#eee" 
-              }}
-            >
-              <Text style={{ fontSize: 14, color: "#333", fontWeight: "500" }}>
-                {new Date(h.atIso).toLocaleString()}
-              </Text>
-              <Text style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
-                {h.note} • Gist: {h.gistId.substring(0, 8)}...
-              </Text>
-            </View>
-          ))
-        )}
-      </View>
-
-      {/* Status Display */}
-      {status ? (
-        <View style={{ 
-          backgroundColor: "#fff", 
-          padding: 14, 
-          borderRadius: 12,
-          borderLeftWidth: 4,
-          borderLeftColor: status.includes("Failed") || status.includes("failed") ? "#E63946" : "#28a745"
-        }}>
-          <Text style={{ 
-            color: status.includes("Failed") || status.includes("failed") ? "#E63946" : "#28a745",
-            fontSize: 14,
-            fontWeight: "500"
-          }}>
-            {status}
-          </Text>
-        </View>
-      ) : null}
-
-      {/* How to Create Token Guide */}
-      <View style={{ backgroundColor: "#fff", padding: 16, borderRadius: 12, marginTop: 16 }}>
-        <Text style={{ fontSize: 18, fontWeight: "600", marginBottom: 12, color: "#000" }}>
-          How to Create a Token
-        </Text>
-
-        <View style={{ gap: 12 }}>
-          <View>
-            <Text style={{ fontSize: 15, fontWeight: "600", color: "#333" }}>
-              1. Go to GitHub Settings
-            </Text>
-            <Text style={{ fontSize: 14, color: "#666", marginTop: 4 }}>
-              Visit github.com/settings/tokens
-            </Text>
-          </View>
-
-          <View>
-            <Text style={{ fontSize: 15, fontWeight: "600", color: "#333" }}>
-              2. Generate New Token
-            </Text>
-            <Text style={{ fontSize: 14, color: "#666", marginTop: 4 }}>
-              Click "Generate new token (classic)"
-            </Text>
-          </View>
-
-          <View>
-            <Text style={{ fontSize: 15, fontWeight: "600", color: "#333" }}>
-              3. Configure Token
-            </Text>
-            <Text style={{ fontSize: 14, color: "#666", marginTop: 4 }}>
-              • Name: "2FA App" or similar{"\n"}
-              • Expiration: No expiration (recommended){"\n"}
-              • Scopes: Check "gist" for backups, or leave all unchecked for encryption only
-            </Text>
-          </View>
-
-          <View>
-            <Text style={{ fontSize: 15, fontWeight: "600", color: "#333" }}>
-              4. Copy & Save
-            </Text>
-            <Text style={{ fontSize: 14, color: "#666", marginTop: 4 }}>
-              Copy the token (starts with ghp_) and paste it above. Save it in a password manager as backup!
-            </Text>
-          </View>
-        </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }

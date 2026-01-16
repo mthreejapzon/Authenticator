@@ -1,23 +1,9 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import {
-  Alert,
-  Animated,
-  Platform,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import Swipeable from "react-native-gesture-handler/Swipeable";
+import { useState } from "react";
+import { Platform, Text, TouchableOpacity, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import * as icons from "simple-icons";
-
-function getProviderIcon(providerName: string) {
-  if (!providerName) return null;
-  const formatted = providerName.toLowerCase().replace(/\s+/g, "");
-  const iconKey = `si${formatted.charAt(0).toUpperCase()}${formatted.slice(1)}`;
-  return (icons as any)[iconKey] || null;
-}
+import { getProviderIcon, type IconData } from "../utils/getProviderIcon";
 
 export default function AccountListItem({
   account,
@@ -30,82 +16,88 @@ export default function AccountListItem({
       username: string;
       password: string;
       value: string;
+      isFavorite?: boolean;
     } | null;
   };
   onDelete: (key: string) => void;
 }) {
   const router = useRouter();
-  const swipeableRef = useRef<Swipeable>(null);
   const [isHovered, setIsHovered] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   if (!account.data) return null;
 
   const providerName = account.data.accountName || "";
-  const providerIcon = getProviderIcon(providerName);
+  const iconData: IconData = getProviderIcon(providerName);
+  const isFavorite = account.data.isFavorite || false;
 
-  // Animate opacity when hover state changes
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: isHovered ? 1 : 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [isHovered, fadeAnim]);
+  /**
+   * Render icon based on type
+   */
+  const renderIcon = () => {
+    switch (iconData.type) {
+      case "simple-icon":
+        return (
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              backgroundColor: iconData.color,
+              justifyContent: "center",
+              alignItems: "center",
+              marginRight: 12,
+            }}
+          >
+            <Svg width={24} height={24} viewBox="0 0 24 24">
+              <Path fill="#fff" d={iconData.value.path} />
+            </Svg>
+          </View>
+        );
 
-  const confirmDelete = () => {
-    if (Platform.OS === 'web') {
-      const confirmed = window.confirm(
-        `Are you sure you want to delete "${providerName}"?`
-      );
-      if (confirmed) {
-        onDelete(account.key);
-      }
-    } else {
-      Alert.alert(
-        "Delete Account",
-        `Are you sure you want to delete "${providerName}"?`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Delete",
-            style: "destructive",
-            onPress: () => onDelete(account.key),
-          },
-        ]
-      );
+      case "emoji":
+        return (
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              backgroundColor: "#f0f0f0",
+              justifyContent: "center",
+              alignItems: "center",
+              marginRight: 12,
+            }}
+          >
+            <Text style={{ fontSize: 24 }}>{iconData.value}</Text>
+          </View>
+        );
+
+      case "initials":
+      default:
+        return (
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              backgroundColor: iconData.color || "#e0e0e0",
+              justifyContent: "center",
+              alignItems: "center",
+              marginRight: 12,
+            }}
+          >
+            <Text
+              style={{
+                color: "#fff",
+                fontWeight: "700",
+                fontSize: 16,
+              }}
+            >
+              {iconData.value}
+            </Text>
+          </View>
+        );
     }
   };
-
-  const renderRightActions = () => (
-    <View
-      style={{
-        flexDirection: "row",
-        marginVertical: 12,
-        borderRadius: 12,
-        overflow: "hidden",
-      }}
-    >
-      <TouchableOpacity
-        onPress={confirmDelete}
-        style={{
-          backgroundColor: "#FF3B30",
-          justifyContent: "center",
-          alignItems: "center",
-          width: 80,
-        }}
-      >
-        <Text style={{ color: "white", fontWeight: "600" }}>Delete</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const initials = providerName
-    ? providerName
-        .replace(/[^A-Za-z0-9]/g, "")
-        .slice(0, 2)
-        .toUpperCase()
-    : "??";
 
   const cardContent = (
     <TouchableOpacity
@@ -124,123 +116,87 @@ export default function AccountListItem({
     >
       <View
         style={{
-          backgroundColor: "#fff",
-          padding: 16,
-          borderRadius: 12,
-          marginBottom: 12,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+          marginBottom: 4,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
-          shadowColor: "#000",
-          shadowOpacity: isHovered ? 0.1 : 0.05,
-          shadowRadius: isHovered ? 8 : 5,
-          shadowOffset: { width: 0, height: 2 },
-          elevation: 3,
+          borderRadius: 10,
+          backgroundColor: isHovered && Platform.OS === "web" ? "#f9fafb" : "#ffffff",
         }}
       >
         <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-          {providerIcon ? (
-            <Svg
-              width={28}
-              height={28}
-              viewBox="0 0 24 24"
-              style={{ marginRight: 12 }}
-            >
-              <Path fill={`#${providerIcon.hex}`} d={providerIcon.path} />
-            </Svg>
-          ) : (
-            <View
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                backgroundColor: "#e0e0e0",
-                marginRight: 12,
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <Text
-                style={{
-                  color: "#555",
-                  fontWeight: "700",
-                  fontSize: 14,
-                }}
-              >
-                {initials}
-              </Text>
-            </View>
-          )}
+          {/* Leading icon container to match Figma style */}
+          <View
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 14,
+              backgroundColor: "#f3f4f6",
+              justifyContent: "center",
+              alignItems: "center",
+              marginRight: 16,
+            }}
+          >
+            {renderIcon()}
+          </View>
 
           <View style={{ flex: 1 }}>
-            <Text
-              style={{
-                fontSize: 18,
-                fontWeight: "600",
-                color: "#333",
-                flexShrink: 1,
-              }}
-            >
-              {providerName}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontWeight: "600",
+                  color: "#0a0a0a",
+                  flexShrink: 1,
+                }}
+              >
+                {providerName}
+              </Text>
+              
+              {/* Favorite Star Icon */}
+              {isFavorite && (
+                <Ionicons name="star" size={16} color="#FFC107" />
+              )}
+            </View>
 
             {account.data?.username && (
-              <Text style={{ color: "#999" }}>
+              <Text style={{ color: "#999", fontSize: 14 }}>
                 {account.data.username}
+              </Text>
+            )}
+
+            {/* Status label - only show if 2FA is actually enabled */}
+            {account.data?.value && account.data.value.trim().length > 0 && (
+              <Text
+                style={{
+                  marginTop: 2,
+                  fontSize: 12,
+                  fontWeight: "500",
+                  color: "#155dfc",
+                }}
+              >
+                2FA Enabled
               </Text>
             )}
           </View>
         </View>
 
-        {/* Hover actions for desktop with animation */}
-        {Platform.OS === 'web' ? (
-          <Animated.View
-            style={{
-              flexDirection: 'row',
-              gap: 8,
-              opacity: fadeAnim,
-            }}
-          >
-            <TouchableOpacity
-              onPress={(e) => {
-                e.stopPropagation();
-                confirmDelete();
-              }}
-              style={{
-                backgroundColor: "#FF3B30",
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderRadius: 6,
-              }}
-            >
-              <Text style={{ color: "white", fontWeight: "600", fontSize: 12 }}>
-                Delete
-              </Text>
-            </TouchableOpacity>
-          </Animated.View>
-        ) : (
-          <Text
-            style={{
-              fontSize: 22,
-              color: "#999",
-              marginLeft: 8,
-              fontWeight: "300",
-            }}
-          >
-            ›
-          </Text>
-        )}
+        {/* Chevron to match mobile list design (no inline delete) */}
+        <Text
+          style={{
+            fontSize: 20,
+            color: "#c4c7d0",
+            marginLeft: 8,
+            fontWeight: "500",
+          }}
+        >
+          ›
+        </Text>
       </View>
     </TouchableOpacity>
   );
-
-  if (Platform.OS === 'web') {
-    return cardContent;
-  }
-
-  return (
-    <Swipeable ref={swipeableRef} renderRightActions={renderRightActions}>
-      {cardContent}
-    </Swipeable>
-  );
+  
+  return cardContent;
 }

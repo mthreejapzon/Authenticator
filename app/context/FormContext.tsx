@@ -4,6 +4,7 @@ export type FormFields = {
   accountName: string;
   username: string;
   password: string;
+  websiteUrl: string;
   secretKey: string;
   notes: string;
 };
@@ -20,6 +21,7 @@ export const FormProvider: React.FC<{ children: React.ReactNode }> = ({ children
     accountName: "",
     username: "",
     password: "",
+    websiteUrl: "",
     secretKey: "",
     notes: "",
   });
@@ -28,7 +30,14 @@ export const FormProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setFormDataState((prev) => ({ ...prev, ...data }));
 
   const resetForm = () =>
-    setFormDataState({ accountName: "", username: "", password: "", secretKey: "", notes: "" });
+    setFormDataState({
+      accountName: "",
+      username: "",
+      password: "",
+      websiteUrl: "",
+      secretKey: "",
+      notes: "",
+    });
 
   return (
     <FormContext.Provider value={{ ...formData, setFormData, resetForm }}>

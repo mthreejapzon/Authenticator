@@ -1,8 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { Link, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useLayoutEffect, useState } from "react";
-import { Pressable, Text, TouchableOpacity, View } from "react-native";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  AppState,
+  Pressable,
+  Text,
+  TouchableOpacity,
+  View
+} from "react-native";
 import AccountList from "./components/AccountList";
 import { Storage } from "./utils/storage";
 
@@ -10,7 +17,21 @@ export default function Index() {
   const navigation = useNavigation();
   const router = useRouter();
 
-  // ⭐ Add header with Settings button
+  const [accountKeys, setAccountKeys] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<
+    {
+      key: string;
+      data: {
+        accountName: string;
+        username: string;
+        password: string;
+        value: string;
+      } | null;
+    }[]
+  >([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Header with Settings button
   useLayoutEffect(() => {
     navigation.setOptions({
       title: "Authenticator",
@@ -25,18 +46,35 @@ export default function Index() {
     });
   }, [navigation]);
 
-  const [accountKeys, setAccountKeys] = useState<string[]>([]);
-  const [accounts, setAccounts] = useState<
-    {
-      key: string;
-      data: {
-        accountName: string;
-        username: string;
-        password: string;
-        value: string;
-      } | null;
-    }[]
-  >([]);
+  // Subscribe to sync state changes
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+
+    (async () => {
+      try {
+        const { onSyncStateChange, isSyncing: getCurrentSyncState } = await import("./utils/backupUtils");
+        
+        // Set initial state
+        setIsSyncing(getCurrentSyncState());
+        
+        // Subscribe to changes
+        unsubscribe = onSyncStateChange((syncing) => {
+          setIsSyncing(syncing);
+          
+          // Reload accounts after sync completes
+          if (!syncing) {
+            loadAccounts();
+          }
+        });
+      } catch (err) {
+        console.error("Failed to subscribe to sync state:", err);
+      }
+    })();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -58,34 +96,48 @@ export default function Index() {
     }
   }, []);
 
+  // Load accounts when screen is focused
   useFocusEffect(
     useCallback(() => {
       loadAccounts();
     }, [loadAccounts])
   );
 
-  const deleteAccount = async (key: string) => {
-  try {
-    await Storage.deleteItemAsync(key);
-
-    const updatedKeys = accountKeys.filter((k) => k !== key);
-    await Storage.setItemAsync(
-      "userAccountKeys",
-      JSON.stringify(updatedKeys)
-    );
-
-    setAccountKeys(updatedKeys);
-    setAccounts((prev) => prev.filter((acc) => acc.key !== key));
-
-    // Trigger auto-backup after deletion
-    const { triggerAutoBackup } = await import("./utils/backupUtils");
-    triggerAutoBackup().catch(err => {
-      console.error("Auto-backup after delete failed:", err);
+  // Refresh accounts when app comes to foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        loadAccounts();
+      }
     });
-  } catch (err) {
-    console.error("Error deleting account:", err);
-  }
-};
+
+    return () => {
+      subscription.remove();
+    };
+  }, [loadAccounts]);
+
+  const deleteAccount = async (key: string) => {
+    try {
+      await Storage.deleteItemAsync(key);
+
+      const updatedKeys = accountKeys.filter((k) => k !== key);
+      await Storage.setItemAsync(
+        "userAccountKeys",
+        JSON.stringify(updatedKeys)
+      );
+
+      setAccountKeys(updatedKeys);
+      setAccounts((prev) => prev.filter((acc) => acc.key !== key));
+
+      // Trigger auto-backup after deletion
+      const { triggerAutoBackup } = await import("./utils/backupUtils");
+      triggerAutoBackup().catch(err => {
+        console.error("Auto-backup after delete failed:", err);
+      });
+    } catch (err) {
+      console.error("Error deleting account:", err);
+    }
+  };
 
   const editAccount = async (key: string, newName: string) => {
     try {
@@ -112,6 +164,34 @@ export default function Index() {
         padding: 20,
       }}
     >
+      {/* Sync Indicator */}
+      {isSyncing && (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            backgroundColor: "#e3f2fd",
+            padding: 12,
+            borderRadius: 10,
+            marginBottom: 16,
+            borderLeftWidth: 4,
+            borderLeftColor: "#2196F3",
+          }}
+        >
+          <ActivityIndicator size="small" color="#1976D2" />
+          <Text
+            style={{
+              marginLeft: 10,
+              color: "#1565C0",
+              fontSize: 14,
+              fontWeight: "500",
+            }}
+          >
+            Syncing from cloud...
+          </Text>
+        </View>
+      )}
+
       {accounts.length ? (
         <AccountList
           accounts={accounts}
@@ -127,7 +207,7 @@ export default function Index() {
       <Link href="/setup" asChild>
         <TouchableOpacity
           style={{
-            backgroundColor: "#007AFF",
+            backgroundColor: "#000000",
             paddingVertical: 14,
             borderRadius: 12,
             marginTop: 20,

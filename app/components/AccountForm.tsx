@@ -1,18 +1,21 @@
 import { Ionicons } from "@expo/vector-icons";
-import { RelativePathString, useRouter } from "expo-router";
+import { RelativePathString, useNavigation, useRouter } from "expo-router";
 import * as OTPAuth from "otpauth";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { FormFields } from "../context/FormContext";
 import { decryptText } from "../utils/crypto";
 import { Storage } from "../utils/storage";
@@ -22,6 +25,7 @@ export default function AccountForm({
   accountName,
   username,
   password,
+  websiteUrl,
   accountOtp,
   secretKey,
   notes,
@@ -33,6 +37,7 @@ export default function AccountForm({
   accountName: string;
   username: string;
   password: string;
+  websiteUrl: string;
   accountOtp?: string;
   secretKey: string;
   notes: string;
@@ -41,13 +46,18 @@ export default function AccountForm({
   referer?: RelativePathString;
 }) {
   const router = useRouter();
+  const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [isSaving, setIsSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [hasToken, setHasToken] = useState(false);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(
+    !!(secretKey && secretKey.trim().length > 0)
+  );
 
-// Check if GitHub token exists
+  // Check if GitHub token exists
   useEffect(() => {
     (async () => {
       const token = await Storage.getItemAsync("github_token");
@@ -98,7 +108,7 @@ export default function AccountForm({
   /**
    * Submit handler - Save or update account
    */
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
   const missing: string[] = [];
   if (!accountName.trim()) missing.push("accountName");
   if (!username.trim()) missing.push("username");
@@ -126,23 +136,38 @@ export default function AccountForm({
     let value = accountOtp || "";
     if (secretKey && secretKey.trim()) {
       try {
-        const totp = new OTPAuth.TOTP({
-          label: accountName.trim(),
-          secret: OTPAuth.Secret.fromBase32(secretKey.trim()),
-        });
-        value = totp.toString();
-      } catch (err) {
-        console.error("❌ Invalid OTP secret:", err);
-        const msg = "Invalid OTP secret key. Please check the format.";
-        if (Platform.OS === 'web') {
-          window.alert(msg);
-        } else {
-          Alert.alert("Invalid OTP", msg);
+        // Clean the secret key (remove whitespace and convert to uppercase)
+        const cleanSecret = secretKey.trim().replace(/\s+/g, '').toUpperCase();
+        
+        // Validate that it's a valid base32 string
+        if (!/^[A-Z2-7]+=*$/.test(cleanSecret)) {
+          throw new Error("Invalid base32 format");
         }
-        setIsSaving(false);
-        return;
-      }
+        
+        // Create TOTP with the clean secret
+        const totp = new OTPAuth.TOTP({
+          issuer: accountName.trim(),
+          label: username.trim() || accountName.trim(),
+          algorithm: 'SHA1',
+          digits: 6,
+          period: 30,
+          secret: cleanSecret, // Use the cleaned secret directly as a string
+        });
+    
+    value = totp.toString();
+    console.log("✅ OTP URI created successfully");
+  } catch (err) {
+    console.error("❌ Invalid OTP secret:", err);
+    const msg = `Invalid OTP secret key: ${err instanceof Error ? err.message : 'Please check the format (should be base32: A-Z, 2-7)'}`;
+    if (Platform.OS === 'web') {
+      window.alert(msg);
+    } else {
+      Alert.alert("Invalid OTP", msg);
     }
+    setIsSaving(false);
+    return;
+  }
+}
 
     const key = accountKey || `account_${Date.now()}`;
     
@@ -162,13 +187,31 @@ export default function AccountForm({
       console.log("⚠️ No GitHub token - saving data unencrypted");
     }
 
+    // Get existing data if updating
+    let existingData: any = null;
+    if (accountKey) {
+      try {
+        const stored = await Storage.getItemAsync(accountKey);
+        if (stored) {
+          existingData = JSON.parse(stored);
+        }
+      } catch (err) {
+        console.error("Error reading existing data:", err);
+      }
+    }
+
+    const now = new Date().toISOString();
     const data = {
       accountName: accountName.trim(),
       username: username.trim(),
       password: finalPassword,
+      websiteUrl: websiteUrl.trim(),
       value: finalOtp,
       notes: notes.trim(),
       encrypted: hasGitHubToken, // Flag to know if data is encrypted
+      createdAt: existingData?.createdAt || now, // Preserve original creation date or set new
+      modifiedAt: now, // Always update modified date
+      isFavorite: existingData?.isFavorite || false, // Preserve favorite status
     };
 
     console.log("💾 Saving account data...");
@@ -209,7 +252,7 @@ export default function AccountForm({
   } finally {
     setIsSaving(false);
   }
-};
+}, [accountName, username, password, websiteUrl, secretKey, notes, accountKey, accountOtp, referer, setFormData, resetForm, router]);
 
   const handleChange = (fieldName: keyof FormFields, value: string) => {
     setFormData({ [fieldName]: value });
@@ -228,50 +271,152 @@ export default function AccountForm({
     missingFields.includes(fieldName) && styles.inputError,
   ];
 
+  const handleToggleTwoFactor = (value: boolean) => {
+    setTwoFactorEnabled(value);
+    if (!value) {
+      setFormData({ secretKey: "" });
+    }
+  };
+
+  // Set up native header with Back and Save buttons (only if not in edit mode from details screen)
+  // When accountKey exists, we're editing from details screen, so we'll use custom header
+  useLayoutEffect(() => {
+    if (!accountKey) {
+      // Only set header for new account creation
+      navigation.setOptions({
+        headerLeft: () => (
+          <TouchableOpacity
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+            style={{
+              width: 36,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 8,
+              marginLeft: 8,
+            }}
+          >
+            <Ionicons name="arrow-back" size={20} color="#000" />
+          </TouchableOpacity>
+        ),
+        headerRight: () => (
+          <Pressable
+            onPress={handleSubmit}
+            disabled={isSaving}
+            style={{
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              backgroundColor: "#000",
+              borderRadius: 8,
+              opacity: isSaving ? 0.5 : 1,
+              marginRight: 8,
+            }}
+          >
+            <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>
+              {isSaving ? "Saving" : "Save"}
+            </Text>
+          </Pressable>
+        ),
+      });
+    } else {
+      // Hide header when editing from details screen (we'll use custom header)
+      navigation.setOptions({
+        headerShown: false,
+      });
+    }
+  }, [navigation, isSaving, handleSubmit, router, accountKey]);
+
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: "#f3f4f6" }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
+      {/* Custom Header for Edit Mode */}
+      {accountKey && (
+        <View
+          style={{
+            borderBottomWidth: 0.613,
+            borderBottomColor: "#e5e7eb",
+            paddingTop: insets.top,
+            minHeight: 72.591,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingHorizontal: 16,
+            paddingBottom: 12,
+            backgroundColor: "#fff",
+          }}
+        >
+          {/* Back Button */}
+          <TouchableOpacity
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+            style={{
+              width: 36,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 8,
+            }}
+          >
+            <Ionicons name="arrow-back" size={20} color="#000" />
+          </TouchableOpacity>
+
+          {/* Save Button */}
+          <TouchableOpacity
+            onPress={handleSubmit}
+            disabled={isSaving}
+            activeOpacity={0.8}
+            style={{
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              backgroundColor: "#000",
+              borderRadius: 8,
+              opacity: isSaving ? 0.5 : 1,
+            }}
+          >
+            <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>
+              {isSaving ? "Saving..." : "Save"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <ScrollView
-        style={{ flex: 1, backgroundColor: "#fff", padding: 20 }}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        style={styles.formScroll}
+        contentContainerStyle={{ paddingBottom: 32 }}
       >
         {/* Warning if no token */}
-          {!hasToken && (
-            <View
-              style={{
-                backgroundColor: "#fff3cd",
-                borderRadius: 8,
-                padding: 12,
-                marginBottom: 16,
-                borderLeftWidth: 4,
-                borderLeftColor: "#ff9800",
-              }}
-            >
-              <Text style={{ color: "#856404", fontSize: 13, lineHeight: 18 }}>
-                ⚠️ <Text style={{ fontWeight: "600" }}>No encryption token:</Text> Your data will be saved unencrypted. Add a GitHub token in Settings for encryption and cloud backup.
-              </Text>
-            </View>
-          )}
-        {/* Account Name */}
+        {!hasToken && (
+          <View style={styles.warningBanner}>
+            <Text style={styles.warningText}>
+              ⚠️{" "}
+              <Text style={{ fontWeight: "600" }}>No encryption token:</Text>{" "}
+              Your data will be saved unencrypted. Add a GitHub token in
+              Settings for encryption and cloud backup.
+            </Text>
+          </View>
+        )}
+
+        {/* Title */}
         <View style={styles.fieldWrapper}>
-          <Text style={styles.label}>Account Name *</Text>
+          <Text style={styles.label}>Title</Text>
           <TextInput
             value={accountName}
             onChangeText={(text) => handleChange("accountName", text)}
-            placeholder="e.g. GitHub"
+            placeholder="e.g., GitHub"
             style={getInputStyle("accountName")}
           />
         </View>
 
-        {/* Username */}
+        {/* Username or Email */}
         <View style={styles.fieldWrapper}>
-          <Text style={styles.label}>Username *</Text>
+          <Text style={styles.label}>Username or Email</Text>
           <TextInput
             value={username}
             onChangeText={(text) => handleChange("username", text)}
-            placeholder="e.g. john.doe"
+            placeholder="username@example.com"
             style={getInputStyle("username")}
             autoCapitalize="none"
             autoCorrect={false}
@@ -280,60 +425,42 @@ export default function AccountForm({
 
         {/* Password */}
         <View style={styles.fieldWrapper}>
-          <Text style={styles.label}>Password *</Text>
+          <Text style={styles.label}>Password</Text>
           <View style={getInputContainerStyle("password")}>
             <TextInput
               value={password}
               onChangeText={(text) => handleChange("password", text)}
               placeholder="Required"
               secureTextEntry={!showPassword}
-              textContentType="oneTimeCode"
               style={styles.textField}
             />
             {password.length > 0 && (
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                <Text style={styles.toggleText}>
-                  {showPassword ? "Hide" : "Show"}
-                </Text>
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.iconButton}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={showPassword ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color="#4b5563"
+                />
               </TouchableOpacity>
             )}
           </View>
         </View>
 
-        {/* OTP */}
+        {/* Website URL */}
         <View style={styles.fieldWrapper}>
-          <Text style={styles.label}>One-Time Password (Optional)</Text>
-          <View style={styles.otpRow}>
-            <View style={styles.otpInputContainer}>
-              <TextInput
-                value={secretKey}
-                onChangeText={(text) => handleChange("secretKey", text)}
-                placeholder="Enter manually or scan QR"
-                secureTextEntry={!showSecret}
-                textContentType="oneTimeCode"
-                autoCapitalize="none"
-                style={styles.textField}
-              />
-              {secretKey?.length > 0 && (
-                <TouchableOpacity
-                  onPress={() => setShowSecret(!showSecret)}
-                  style={styles.toggleButton}
-                >
-                  <Text style={styles.toggleText}>
-                    {showSecret ? "Hide" : "Show"}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <TouchableOpacity
-              onPress={() => router.push("/add-qr")}
-              style={styles.qrButtonAligned}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="qr-code-outline" size={22} color="#000" />
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.label}>Website URL</Text>
+          <TextInput
+            value={websiteUrl}
+            onChangeText={(text) => handleChange("websiteUrl", text)}
+            placeholder="https://example.com"
+            style={styles.input}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
         </View>
 
         {/* Notes */}
@@ -350,28 +477,93 @@ export default function AccountForm({
             ]}
           />
         </View>
-      </ScrollView>
 
-      {/* Save Button */}
-      <View style={styles.submitWrapper}>
-        <TouchableOpacity
-          onPress={handleSubmit}
-          disabled={isSaving}
-          style={[
-            styles.submitButton,
-            { backgroundColor: isSaving ? "#999" : "#007AFF" },
-          ]}
-        >
-          <Text style={styles.submitText}>
-            {isSaving ? "Saving..." : "Save Account"}
-          </Text>
-        </TouchableOpacity>
-      </View>
+        {/* Divider */}
+        <View style={styles.sectionDivider} />
+
+        {/* Two-Factor Authentication card */}
+        <View style={styles.twoFactorCard}>
+          <View style={styles.twoFactorHeader}>
+            <View style={styles.twoFactorTitleRow}>
+              <View style={styles.twoFactorIconWrapper}>
+                <Ionicons name="lock-closed-outline" size={20} color="#1d4ed8" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.twoFactorTitle}>
+                  Two-Factor Authentication
+                </Text>
+                <Text style={styles.twoFactorSubtitle}>
+                  Add TOTP for extra security
+                </Text>
+              </View>
+            </View>
+            <Switch
+              value={twoFactorEnabled}
+              onValueChange={handleToggleTwoFactor}
+              trackColor={{ false: "#d1d5db", true: "#020617" }}
+              thumbColor="#ffffff"
+            />
+          </View>
+
+          {twoFactorEnabled && (
+            <View style={styles.twoFactorBody}>
+              <View style={styles.fieldWrapper}>
+                <Text style={styles.label}>Secret Key</Text>
+                <View style={styles.otpInputContainer}>
+                  <TextInput
+                    value={secretKey}
+                    onChangeText={(text) => handleChange("secretKey", text)}
+                    placeholder="JBSWY3DPEHPK3PXP"
+                    secureTextEntry={!showSecret}
+                    autoCapitalize="none"
+                    style={styles.textField}
+                  />
+                  {secretKey?.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() => setShowSecret(!showSecret)}
+                      style={styles.toggleButton}
+                    >
+                      <Text style={styles.toggleText}>
+                        {showSecret ? "Hide" : "Show"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => router.push("/add-qr")}
+                style={styles.scanQrButton}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="qr-code-outline"
+                  size={18}
+                  color="#0a0a0a"
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={styles.scanQrText}>Scan QR Code</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.helperText}>
+                Scan the QR code or manually enter the secret key from your 2FA
+                setup
+              </Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  formScroll: {
+    flex: 1,
+    backgroundColor: "#fff",
+    paddingHorizontal: 24,
+    paddingTop: 24,
+  },
   fieldWrapper: {
     marginBottom: 14,
   },
@@ -381,7 +573,7 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#e5e7eb",
     borderRadius: 10,
     padding: 10,
     fontSize: 16,
@@ -397,7 +589,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#f9f9f9",
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#e5e7eb",
     borderRadius: 10,
     paddingHorizontal: 10,
     height: 48,
@@ -413,7 +605,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#f9f9f9",
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#e5e7eb",
     borderRadius: 10,
     paddingHorizontal: 12,
     height: 48,
@@ -442,22 +634,91 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#ccc",
   },
-  submitWrapper: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 20,
-    backgroundColor: "#fff",
-  },
-  submitButton: {
-    paddingVertical: 14,
-    borderRadius: 10,
+  iconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    marginLeft: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0,0,0,0.1)",
   },
-  submitText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 16,
+  sectionDivider: {
+    height: 1,
+    backgroundColor: "#e5e7eb",
+    marginVertical: 24,
+  },
+  twoFactorCard: {
+    backgroundColor: "#f9fafb",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+  },
+  twoFactorHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  twoFactorTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  twoFactorIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "#dbeafe",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  twoFactorTitle: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#0a0a0a",
+  },
+  twoFactorSubtitle: {
+    fontSize: 12,
+    color: "#6a7282",
+    marginTop: 2,
+  },
+  twoFactorBody: {
+    marginTop: 16,
+  },
+  scanQrButton: {
+    height: 44,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0,0,0,0.1)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+  },
+  scanQrText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#0a0a0a",
+  },
+  helperText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: "#6a7282",
+  },
+  warningBanner: {
+    backgroundColor: "#fff3cd",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: "#ff9800",
+  },
+  warningText: {
+    color: "#856404",
+    fontSize: 13,
+    lineHeight: 18,
   },
 });
