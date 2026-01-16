@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Platform,
   ScrollView,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -39,6 +41,72 @@ export default function SettingsScreen() {
   const [lastBackup, setLastBackup] = useState<string | null>(null);
   const [history, setHistory] = useState<BackupHistoryItem[]>([]);
   const [isLoadingToken, setIsLoadingToken] = useState(true);
+  const [autoRestoreEnabled, setAutoRestoreEnabled] = useState(true);
+  const [syncStatus, setSyncStatus] = useState<string>("Idle");
+  const syncProgress = useRef(new Animated.Value(0)).current;
+
+
+
+  // Load auto-restore setting
+  useEffect(() => {
+    (async () => {
+      try {
+        const { isAutoRestoreEnabled } = await import("./utils/backupUtils");
+        const enabled = await isAutoRestoreEnabled();
+        setAutoRestoreEnabled(enabled);
+      } catch (err) {
+        console.error("Failed to load auto-restore setting:", err);
+      }
+    })();
+  }, []);
+
+  // Subscribe to sync state
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+
+    (async () => {
+      try {
+        const { onSyncStateChange } = await import("./utils/backupUtils");
+        
+        unsubscribe = onSyncStateChange((syncing) => {
+          if (syncing) {
+            setSyncStatus("Syncing...");
+          } else {
+            setSyncStatus("Up to date");
+            // Clear status after 2 seconds
+            setTimeout(() => setSyncStatus("Idle"), 2000);
+          }
+        });
+      } catch (err) {
+        console.error("Failed to subscribe to sync state:", err);
+      }
+    })();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // Toggle auto-restore function
+  const toggleAutoRestore = async (enabled: boolean) => {
+    try {
+      const { setAutoRestoreEnabled } = await import("./utils/backupUtils");
+      await setAutoRestoreEnabled(enabled);
+      setAutoRestoreEnabled(enabled);
+      
+      const msg = enabled 
+        ? "Auto-restore enabled. Your accounts will sync automatically."
+        : "Auto-restore disabled. You'll need to restore manually.";
+      
+      if (Platform.OS === 'web') {
+        window.alert(msg);
+      } else {
+        Alert.alert("Auto-Restore", msg);
+      }
+    } catch (err) {
+      console.error("Failed to toggle auto-restore:", err);
+    }
+  };
 
   // Load saved values
   useEffect(() => {
@@ -851,6 +919,75 @@ export default function SettingsScreen() {
           <Text style={{ color: "#856404", fontSize: 14, lineHeight: 20 }}>
             ⚠️ <Text style={{ fontWeight: "600" }}>Token required:</Text> Add a GitHub token above to decrypt passwords/OTP codes and enable backups.
           </Text>
+        </View>
+      )}
+
+      {/* Auto-Restore Toggle Section */}
+      {hasToken && (
+        <View style={{ backgroundColor: "#fff", padding: 16, borderRadius: 12, marginBottom: 16 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 18, fontWeight: "600", color: "#000", marginBottom: 4 }}>
+                Auto-Restore
+              </Text>
+              <Text style={{ fontSize: 13, color: "#666", lineHeight: 18 }}>
+                Automatically sync accounts from cloud when changes are detected
+              </Text>
+            </View>
+            
+            {/* Import Switch from react-native at the top */}
+            <Switch
+              value={autoRestoreEnabled}
+              onValueChange={toggleAutoRestore}
+              trackColor={{ false: "#d1d1d6", true: "#34C759" }}
+              thumbColor="#fff"
+              ios_backgroundColor="#d1d1d6"
+            />
+          </View>
+
+          {/* Sync Status */}
+          {autoRestoreEnabled && (
+            <View
+              style={{
+                marginTop: 12,
+                paddingTop: 12,
+                borderTopWidth: 1,
+                borderTopColor: "#f0f0f0",
+                flexDirection: "row",
+                alignItems: "center",
+              }}
+            >
+              <View
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: 
+                    syncStatus === "Syncing..." ? "#2196F3" :
+                    syncStatus === "Up to date" ? "#4CAF50" :
+                    "#9E9E9E",
+                  marginRight: 8,
+                }}
+              />
+              <Text style={{ fontSize: 13, color: "#666" }}>
+                {syncStatus === "Idle" ? "Monitoring for changes..." : syncStatus}
+              </Text>
+            </View>
+          )}
+
+          {/* Info */}
+          <View
+            style={{
+              marginTop: 12,
+              padding: 12,
+              backgroundColor: "#f0f7ff",
+              borderRadius: 8,
+            }}
+          >
+            <Text style={{ fontSize: 12, color: "#1976D2", lineHeight: 16 }}>
+              ℹ️ Checks for updates every 30 seconds. Your accounts will appear automatically on all devices.
+            </Text>
+          </View>
         </View>
       )}
 

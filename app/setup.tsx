@@ -8,6 +8,7 @@ export default function SetupScreen() {
     accountName,
     username,
     password,
+    websiteUrl,
     secretKey,
     notes,
     setFormData,
@@ -25,6 +26,7 @@ export default function SetupScreen() {
       accountName={accountName} 
       username={username} 
       password={password} 
+      websiteUrl={websiteUrl}
       secretKey={secretKey} 
       notes={notes} 
       setFormData={setFormData} 
