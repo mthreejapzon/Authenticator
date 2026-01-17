@@ -293,7 +293,6 @@ export default function AccountForm({
               height: 40,
               alignItems: "center",
               justifyContent: "center",
-              borderRadius: 8,
               marginLeft: 8,
             }}
           >
