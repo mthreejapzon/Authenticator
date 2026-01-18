@@ -91,5 +91,7 @@
     <string>Automatic</string>
     <key>UIViewControllerBasedStatusBarAppearance</key>
     <false/>
+    <key>icon</key>
+    <string>./assets/images/appstore.png</string>
   </dict>
 </plist>

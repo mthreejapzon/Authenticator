@@ -4,7 +4,7 @@
     "slug": "Authenticator",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/authicon.png",
+    "icon": "./assets/images/appstore.png",
     "scheme": "authfactory",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -17,7 +17,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.narralabs.authfactory",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+      "icon": "./assets/images/appstore.png"
       }
     },
     "android": {
