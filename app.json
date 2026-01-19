@@ -18,7 +18,7 @@
       "bundleIdentifier": "com.narralabs.authfactory",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-      "icon": "./assets/images/appstore.png"
+        "icon": "./assets/images/appstore.png"
       }
     },
     "android": {
@@ -62,7 +62,9 @@
           "configureAndroidBackup": true,
           "faceIDPermission": "Allow $(PRODUCT_NAME) to access your Face ID biometric data."
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
