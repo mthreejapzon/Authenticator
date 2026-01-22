@@ -13,7 +13,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { FormFields } from "../context/FormContext";
@@ -31,9 +31,8 @@ export default function AccountForm({
   notes,
   setFormData,
   resetForm,
-  referer,
 }: {
-  accountKey?: string | undefined;
+  accountKey?: string;
   accountName: string;
   username: string;
   password: string;
@@ -43,233 +42,163 @@ export default function AccountForm({
   notes: string;
   setFormData: (data: Partial<FormFields>) => void;
   resetForm: () => void;
-  referer?: RelativePathString;
 }) {
   const router = useRouter();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+
   const [isSaving, setIsSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [hasToken, setHasToken] = useState(false);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(
-    !!(secretKey && secretKey.trim().length > 0)
+    !!secretKey?.trim()
   );
 
-  // Check if GitHub token exists
+  /**
+   * 🔒 Disable native navigation bar completely
+   */
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerShown: false,
+    });
+  }, [navigation]);
+
+  /**
+   * Check GitHub token
+   */
   useEffect(() => {
     (async () => {
       const token = await Storage.getItemAsync("github_token");
-      setHasToken(token !== null && token.trim().length > 0);
+      setHasToken(!!token?.trim());
     })();
   }, []);
 
   /**
-   * Reset form when creating a new account
+   * Reset form when creating new account
    */
   useEffect(() => {
-    if (!accountKey) {
-      resetForm();
-    }
+    if (!accountKey) resetForm();
   }, [accountKey]);
 
   /**
-   * Decrypt password when editing an existing account
+   * Decrypt password in edit mode
    */
   useEffect(() => {
-    if (!accountKey) return; // Skip in create mode
+    if (!accountKey || !password) return;
 
     (async () => {
-      try {
-        // Get GitHub token
-        const pat = await Storage.getItemAsync("github_token");
-        
-        if (!pat) {
-          console.warn("⚠️ No GitHub token found");
-          return;
-        }
+      const pat = await Storage.getItemAsync("github_token");
+      if (!pat) return;
 
-        if (password) {
-          try {
-            const decryptedPw = await decryptText(password, pat);
-            setFormData({ password: decryptedPw });
-            console.log("✅ Password decrypted for editing");
-          } catch (err) {
-            console.error("❌ Failed to decrypt password for editing:", err);
-          }
-        }
+      try {
+        const decrypted = await decryptText(password, pat);
+        setFormData({ password: decrypted });
       } catch (err) {
-        console.error("Error in edit mode setup:", err);
+        console.error("Password decrypt failed:", err);
       }
     })();
   }, [accountKey]);
 
   /**
-   * Submit handler - Save or update account
+   * Save handler
    */
   const handleSubmit = useCallback(async () => {
-  const missing: string[] = [];
-  if (!accountName.trim()) missing.push("accountName");
-  if (!username.trim()) missing.push("username");
-  if (!password.trim()) missing.push("password");
-  setMissingFields(missing);
-  
-  if (missing.length > 0) {
-    const msg = "Please fill in all required fields";
-    if (Platform.OS === 'web') {
-      window.alert(msg);
-    } else {
-      Alert.alert("Missing Fields", msg);
+    const missing: string[] = [];
+    if (!accountName.trim()) missing.push("accountName");
+    if (!username.trim()) missing.push("username");
+    if (!password.trim()) missing.push("password");
+
+    setMissingFields(missing);
+
+    if (missing.length) {
+      Alert.alert("Missing Fields", "Please fill all required fields");
+      return;
     }
-    return;
-  }
 
-  try {
-    setIsSaving(true);
+    try {
+      setIsSaving(true);
 
-    // Get GitHub token (optional now)
-    const pat = await Storage.getItemAsync("github_token");
-    const hasGitHubToken = pat && pat.trim().length > 0;
+      const pat = await Storage.getItemAsync("github_token");
+      const encrypted = !!pat?.trim();
 
-    // Build OTP URI if secret key is provided
-    let value = accountOtp || "";
-    if (secretKey && secretKey.trim()) {
-      try {
-        // Clean the secret key (remove whitespace and convert to uppercase)
-        const cleanSecret = secretKey.trim().replace(/\s+/g, '').toUpperCase();
-        
-        // Validate that it's a valid base32 string
-        if (!/^[A-Z2-7]+=*$/.test(cleanSecret)) {
-          throw new Error("Invalid base32 format");
-        }
-        
-        // Create TOTP with the clean secret
+      let otpValue = accountOtp || "";
+
+      if (twoFactorEnabled && secretKey.trim()) {
+        const clean = secretKey.replace(/\s+/g, "").toUpperCase();
         const totp = new OTPAuth.TOTP({
-          issuer: accountName.trim(),
-          label: username.trim() || accountName.trim(),
-          algorithm: 'SHA1',
-          digits: 6,
-          period: 30,
-          secret: cleanSecret, // Use the cleaned secret directly as a string
+          issuer: accountName,
+          label: username,
+          secret: clean,
         });
-    
-    value = totp.toString();
-    console.log("✅ OTP URI created successfully");
-  } catch (err) {
-    console.error("❌ Invalid OTP secret:", err);
-    const msg = `Invalid OTP secret key: ${err instanceof Error ? err.message : 'Please check the format (should be base32: A-Z, 2-7)'}`;
-    if (Platform.OS === 'web') {
-      window.alert(msg);
-    } else {
-      Alert.alert("Invalid OTP", msg);
-    }
-    setIsSaving(false);
-    return;
-  }
-}
-
-    const key = accountKey || `account_${Date.now()}`;
-    
-    let finalPassword = password.trim();
-    let finalOtp = value;
-
-    // Encrypt if we have a token
-    if (hasGitHubToken) {
-      console.log("🔐 Encrypting data with GitHub token...");
-      const { encryptText } = await import("../utils/crypto");
-      finalPassword = await encryptText(password.trim(), pat!);
-      
-      if (value) {
-        finalOtp = await encryptText(value, pat!);
+        otpValue = totp.toString();
       }
-    } else {
-      console.log("⚠️ No GitHub token - saving data unencrypted");
-    }
 
-    // Get existing data if updating
-    let existingData: any = null;
-    if (accountKey) {
-      try {
-        const stored = await Storage.getItemAsync(accountKey);
-        if (stored) {
-          existingData = JSON.parse(stored);
-        }
-      } catch (err) {
-        console.error("Error reading existing data:", err);
+      const key = accountKey || `account_${Date.now()}`;
+      let finalPassword = password.trim();
+      let finalOtp = otpValue;
+
+      if (encrypted) {
+        const { encryptText } = await import("../utils/crypto");
+        finalPassword = await encryptText(finalPassword, pat!);
+        if (finalOtp) finalOtp = await encryptText(finalOtp, pat!);
       }
+
+      const now = new Date().toISOString();
+      const stored = accountKey
+        ? await Storage.getItemAsync(accountKey)
+        : null;
+
+      const existing = stored ? JSON.parse(stored) : {};
+
+      const data = {
+        accountName: accountName.trim(),
+        username: username.trim(),
+        password: finalPassword,
+        websiteUrl: websiteUrl.trim(),
+        value: finalOtp,
+        notes: notes.trim(),
+        encrypted,
+        createdAt: existing.createdAt || now,
+        modifiedAt: now,
+        isFavorite: existing.isFavorite || false,
+      };
+
+      await Storage.setItemAsync(key, JSON.stringify(data));
+
+      if (!accountKey) {
+        const keys = JSON.parse(
+          (await Storage.getItemAsync("userAccountKeys")) || "[]"
+        );
+        if (!keys.includes(key)) keys.push(key);
+        await Storage.setItemAsync("userAccountKeys", JSON.stringify(keys));
+      }
+
+      router.replace(`/details/${key}` as RelativePathString);
+    } catch (err) {
+      Alert.alert("Error", "Failed to save account");
+      console.error(err);
+    } finally {
+      setIsSaving(false);
     }
+  }, [
+    accountName,
+    username,
+    password,
+    websiteUrl,
+    secretKey,
+    notes,
+    accountKey,
+    twoFactorEnabled,
+  ]);
 
-    const now = new Date().toISOString();
-    const data = {
-      accountName: accountName.trim(),
-      username: username.trim(),
-      password: finalPassword,
-      websiteUrl: websiteUrl.trim(),
-      value: finalOtp,
-      notes: notes.trim(),
-      encrypted: hasGitHubToken, // Flag to know if data is encrypted
-      createdAt: existingData?.createdAt || now, // Preserve original creation date or set new
-      modifiedAt: now, // Always update modified date
-      isFavorite: existingData?.isFavorite || false, // Preserve favorite status
-    };
-
-    console.log("💾 Saving account data...");
-    await Storage.setItemAsync(key, JSON.stringify(data));
-
-    // Add to account keys list if new account
-    if (!accountKey) {
-      const storedKeys = await Storage.getItemAsync("userAccountKeys");
-      const keys = storedKeys ? JSON.parse(storedKeys) : [];
-      if (!keys.includes(key)) keys.push(key);
-      await Storage.setItemAsync("userAccountKeys", JSON.stringify(keys));
-      console.log("✅ Account added to keys list");
-    } else {
-      console.log("✅ Account updated");
-    }
-
-    // Trigger auto-backup if token exists
-    if (hasGitHubToken) {
-      console.log("🔄 Triggering auto-backup...");
-      const { triggerAutoBackup } = await import("../utils/backupUtils");
-      triggerAutoBackup().catch(err => {
-        console.error("Auto-backup failed:", err);
-      });
-    }
-
-    resetForm();
-    setMissingFields([]);
-
-    router.replace(`/details/${key}` as RelativePathString);
-  } catch (error) {
-    console.error("❌ Error saving account:", error);
-    const msg = `Failed to save account: ${error instanceof Error ? error.message : "Unknown error"}`;
-    if (Platform.OS === 'web') {
-      window.alert(msg);
-    } else {
-      Alert.alert("Error", msg);
-    }
-  } finally {
-    setIsSaving(false);
-  }
-}, [accountName, username, password, websiteUrl, secretKey, notes, accountKey, accountOtp, referer, setFormData, resetForm, router]);
-
-  const handleChange = (fieldName: keyof FormFields, value: string) => {
-    setFormData({ [fieldName]: value });
-    if (missingFields.includes(fieldName) && value.trim() !== "") {
-      setMissingFields((prev) => prev.filter((f) => f !== fieldName));
+  const handleChange = (field: keyof FormFields, value: string) => {
+    setFormData({ [field]: value });
+    if (value.trim()) {
+      setMissingFields((prev) => prev.filter((f) => f !== field));
     }
   };
-
-  const getInputStyle = (fieldName: string) => [
-    styles.input,
-    missingFields.includes(fieldName) && styles.inputError,
-  ];
-
-  const getInputContainerStyle = (fieldName: string) => [
-    styles.inputContainer,
-    missingFields.includes(fieldName) && styles.inputError,
-  ];
 
   const handleToggleTwoFactor = (value: boolean) => {
     setTwoFactorEnabled(value);
@@ -278,207 +207,113 @@ export default function AccountForm({
     }
   };
 
-  // Set up native header with Back and Save buttons (only if not in edit mode from details screen)
-  // When accountKey exists, we're editing from details screen, so we'll use custom header
-  useLayoutEffect(() => {
-    if (!accountKey) {
-      // Only set header for new account creation
-      navigation.setOptions({
-        headerLeft: () => (
-          <TouchableOpacity
-            onPress={() => router.back()}
-            activeOpacity={0.8}
-            style={{
-              width: 36,
-              height: 40,
-              alignItems: "center",
-              justifyContent: "center",
-              marginLeft: 8,
-            }}
-          >
-            <Ionicons name="arrow-back" size={20} color="#000" />
-          </TouchableOpacity>
-        ),
-        headerRight: () => (
-          <Pressable
-            onPress={handleSubmit}
-            disabled={isSaving}
-            style={{
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              backgroundColor: "#000",
-              borderRadius: 8,
-              opacity: isSaving ? 0.5 : 1,
-              marginRight: 8,
-            }}
-          >
-            <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>
-              {isSaving ? "Saving" : "Save"}
-            </Text>
-          </Pressable>
-        ),
-      });
-    } else {
-      // Hide header when editing from details screen (we'll use custom header)
-      navigation.setOptions({
-        headerShown: false,
-      });
-    }
-  }, [navigation, isSaving, handleSubmit, router, accountKey]);
-
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: "#f3f4f6" }}
+      style={{ flex: 1, backgroundColor: "#fff" }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      {/* Custom Header for Edit Mode */}
-      {accountKey && (
-        <View
+      {/* 🔥 Custom Header */}
+      <View
+        style={{
+          paddingTop: insets.top,
+          height: 56 + insets.top,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 16,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: "#e5e7eb",
+        }}
+      >
+        <Pressable onPress={() => router.back()} hitSlop={12}>
+          <Ionicons name="arrow-back" size={20} color="#000" style={{ marginLeft: 8 }} />
+        </Pressable>
+
+        <Text style={{ fontSize: 17, fontWeight: "600" }}>
+          {accountKey ? "Edit Account" : "Add New Account"}
+        </Text>
+
+        <Pressable
+          onPress={handleSubmit}
+          disabled={isSaving}
           style={{
-            borderBottomWidth: 0.613,
-            borderBottomColor: "#e5e7eb",
-            paddingTop: insets.top,
-            minHeight: 72.591,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
             paddingHorizontal: 16,
-            paddingBottom: 12,
-            backgroundColor: "#fff",
+            paddingVertical: 8,
+            backgroundColor: "#000",
+            borderRadius: 10,
+            opacity: isSaving ? 0.5 : 1,
           }}
         >
-          {/* Back Button */}
-          <TouchableOpacity
-            onPress={() => router.back()}
-            activeOpacity={0.8}
-            style={{
-              width: 36,
-              height: 40,
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: 8,
-            }}
-          >
-            <Ionicons name="arrow-back" size={20} color="#000" />
-          </TouchableOpacity>
+          <Text style={{ color: "#fff", fontWeight: "600" }}>
+            {isSaving ? "Saving…" : "Save"}
+          </Text>
+        </Pressable>
+      </View>
 
-          {/* Save Button */}
-          <TouchableOpacity
-            onPress={handleSubmit}
-            disabled={isSaving}
-            activeOpacity={0.8}
-            style={{
-              paddingHorizontal: 16,
-              paddingVertical: 8,
-              backgroundColor: "#000",
-              borderRadius: 8,
-              opacity: isSaving ? 0.5 : 1,
-            }}
-          >
-            <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>
-              {isSaving ? "Saving..." : "Save"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      <ScrollView
-        style={styles.formScroll}
-        contentContainerStyle={{ paddingBottom: 32 }}
-      >
-        {/* Warning if no token */}
+      {/* 📄 Form */}
+      <ScrollView contentContainerStyle={styles.form}>
         {!hasToken && (
-          <View style={styles.warningBanner}>
+          <View style={styles.warning}>
             <Text style={styles.warningText}>
-              ⚠️{" "}
-              <Text style={{ fontWeight: "600" }}>No encryption token:</Text>{" "}
-              Your data will be saved unencrypted. Add a GitHub token in
-              Settings for encryption and cloud backup.
+              ⚠️ No encryption token. Data will be stored unencrypted.
             </Text>
           </View>
         )}
 
-        {/* Title */}
-        <View style={styles.fieldWrapper}>
-          <Text style={styles.label}>Title</Text>
+        <Field label="Title">
           <TextInput
             value={accountName}
-            onChangeText={(text) => handleChange("accountName", text)}
-            placeholder="e.g., GitHub"
-            style={getInputStyle("accountName")}
+            onChangeText={(t) => handleChange("accountName", t)}
+            style={styles.input}
           />
-        </View>
+        </Field>
 
-        {/* Username or Email */}
-        <View style={styles.fieldWrapper}>
-          <Text style={styles.label}>Username or Email</Text>
+        <Field label="Username or Email">
           <TextInput
             value={username}
-            onChangeText={(text) => handleChange("username", text)}
-            placeholder="username@example.com"
-            style={getInputStyle("username")}
+            onChangeText={(t) => handleChange("username", t)}
+            style={styles.input}
             autoCapitalize="none"
-            autoCorrect={false}
           />
-        </View>
+        </Field>
 
-        {/* Password */}
-        <View style={styles.fieldWrapper}>
-          <Text style={styles.label}>Password</Text>
-          <View style={getInputContainerStyle("password")}>
+        <Field label="Password">
+          <View style={styles.inputRow}>
             <TextInput
               value={password}
-              onChangeText={(text) => handleChange("password", text)}
-              placeholder="Required"
+              onChangeText={(t) => handleChange("password", t)}
               secureTextEntry={!showPassword}
               style={styles.textField}
             />
-            {password.length > 0 && (
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.iconButton}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={showPassword ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                  color="#4b5563"
-                />
-              </TouchableOpacity>
-            )}
+            <Pressable onPress={() => setShowPassword(!showPassword)}>
+              <Ionicons
+                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                size={20}
+              />
+            </Pressable>
           </View>
-        </View>
+        </Field>
 
-        {/* Website URL */}
-        <View style={styles.fieldWrapper}>
-          <Text style={styles.label}>Website URL</Text>
+        <Field label="Website URL">
           <TextInput
             value={websiteUrl}
-            onChangeText={(text) => handleChange("websiteUrl", text)}
-            placeholder="https://example.com"
+            onChangeText={(t) => handleChange("websiteUrl", t)}
             style={styles.input}
             autoCapitalize="none"
             autoCorrect={false}
           />
-        </View>
+        </Field>
 
-        {/* Notes */}
-        <View style={styles.fieldWrapper}>
-          <Text style={styles.label}>Notes (Optional)</Text>
+        <Field label="Notes">
           <TextInput
             value={notes}
-            onChangeText={(text) => handleChange("notes", text)}
-            placeholder="Anything helpful to remember"
+            onChangeText={(t) => handleChange("notes", t)}
             multiline
-            style={[
-              styles.input,
-              { height: 100, paddingTop: 10, textAlignVertical: "top" },
-            ]}
+            style={[styles.input, { height: 90 }]}
           />
-        </View>
+        </Field>
 
-        {/* Divider */}
-        <View style={styles.sectionDivider} />
+        <View style={styles.divider} />
 
         {/* Two-Factor Authentication card */}
         <View style={styles.twoFactorCard}>
@@ -545,8 +380,7 @@ export default function AccountForm({
               </TouchableOpacity>
 
               <Text style={styles.helperText}>
-                Scan the QR code or manually enter the secret key from your 2FA
-                setup
+                Scan the QR code or manually enter the secret key from your 2FA setup
               </Text>
             </View>
           )}
@@ -556,168 +390,155 @@ export default function AccountForm({
   );
 }
 
+/* ---------- Helpers ---------- */
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={{ marginBottom: 14 }}>
+      <Text style={{ fontWeight: "600", marginBottom: 6 }}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
+/* ---------- Styles ---------- */
+
 const styles = StyleSheet.create({
-  formScroll: {
-    flex: 1,
-    backgroundColor: "#fff",
-    paddingHorizontal: 24,
-    paddingTop: 24,
-  },
-  fieldWrapper: {
-    marginBottom: 14,
-  },
-  label: {
-    fontWeight: "600",
-    marginBottom: 6,
+  form: {
+    padding: 24,
+    paddingBottom: 40,
   },
   input: {
+    height: 48,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#e5e7eb",
-    borderRadius: 10,
-    padding: 10,
-    fontSize: 16,
-    color: "#000",
+    paddingHorizontal: 12,
     backgroundColor: "#f9f9f9",
-    height: 48,
   },
-  inputError: {
-    borderColor: "red",
-  },
-  inputContainer: {
+  inputRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f9f9f9",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    height: 48,
-  },
-  otpRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  otpInputContainer: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f9f9f9",
+    gap: 8,
     borderWidth: 1,
     borderColor: "#e5e7eb",
     borderRadius: 10,
     paddingHorizontal: 12,
-    height: 48,
+    backgroundColor: "#f9f9f9",
   },
   textField: {
     flex: 1,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: "#000",
-  },
-  toggleButton: {
-    paddingHorizontal: 4,
-  },
-  toggleText: {
-    color: "#007AFF",
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  qrButtonAligned: {
-    width: 48,
     height: 48,
-    borderRadius: 10,
-    backgroundColor: "#f9f9f9",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#ccc",
   },
-  iconButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#fff",
-    marginLeft: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(0,0,0,0.1)",
-  },
-  sectionDivider: {
+  divider: {
     height: 1,
     backgroundColor: "#e5e7eb",
     marginVertical: 24,
   },
-  twoFactorCard: {
-    backgroundColor: "#f9fafb",
-    borderRadius: 14,
-    padding: 16,
+  warning: {
+    backgroundColor: "#fff3cd",
+    padding: 12,
+    borderRadius: 8,
     marginBottom: 16,
+  },
+  warningText: {
+    fontSize: 13,
+    color: "#856404",
+  },
+  // Two-Factor Authentication styles
+  twoFactorCard: {
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 12,
+    backgroundColor: "#ffffff",
   },
   twoFactorHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    padding: 16,
   },
   twoFactorTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
+    gap: 12,
   },
   twoFactorIconWrapper: {
     width: 40,
     height: 40,
-    borderRadius: 10,
+    borderRadius: 20,
     backgroundColor: "#dbeafe",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
   },
   twoFactorTitle: {
-    fontSize: 14,
-    fontWeight: "500",
+    fontSize: 16,
+    fontWeight: "600",
     color: "#0a0a0a",
   },
   twoFactorSubtitle: {
-    fontSize: 12,
-    color: "#6a7282",
+    fontSize: 13,
+    color: "#6b7280",
     marginTop: 2,
   },
   twoFactorBody: {
-    marginTop: 16,
+    padding: 16,
+    paddingTop: 0,
+    gap: 12,
+  },
+  fieldWrapper: {
+    gap: 8,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  otpInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    backgroundColor: "#f9fafb",
+  },
+  toggleButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  toggleText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1d4ed8",
   },
   scanQrButton: {
-    height: 44,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(0,0,0,0.1)",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#f3f4f6",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
   },
   scanQrText: {
-    fontSize: 14,
-    fontWeight: "500",
+    fontSize: 15,
+    fontWeight: "600",
     color: "#0a0a0a",
   },
   helperText: {
-    marginTop: 8,
-    fontSize: 12,
-    color: "#6a7282",
-  },
-  warningBanner: {
-    backgroundColor: "#fff3cd",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: "#ff9800",
-  },
-  warningText: {
-    color: "#856404",
     fontSize: 13,
+    color: "#6b7280",
     lineHeight: 18,
   },
 });

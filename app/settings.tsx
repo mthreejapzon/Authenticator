@@ -18,8 +18,11 @@ import {
   decryptWithMasterKey,
   encryptWithMasterKey,
   getOrCreateMasterKey,
-  isValidGitHubToken,
 } from "./utils/crypto";
+import {
+  isValidGitHubTokenFormat,
+  validateGitHubToken,
+} from "./utils/githubTokenValidation";
 import { Storage } from "./utils/storage";
 
 /**
@@ -165,59 +168,60 @@ export default function SettingsScreen() {
   const saveToken = async () => {
     try {
       const trimmedToken = githubToken.trim();
-      
+
       if (!trimmedToken) {
-        const msg = "Please enter your GitHub Personal Access Token.";
-        if (Platform.OS === 'web') {
-          window.alert(msg);
-        } else {
-          Alert.alert("Missing token", msg);
-        }
+        Alert.alert("Missing token", "Please enter your GitHub Personal Access Token.");
         return;
       }
 
-      // Validate token format
-      if (!isValidGitHubToken(trimmedToken)) {
-        const msg = 
-          "This doesn't look like a valid GitHub token.\n\n" +
-          "GitHub tokens typically:\n" +
-          "• Are 40+ characters long\n" +
-          "• Start with 'ghp_', 'github_pat_', or similar\n\n" +
-          "Do you want to save it anyway?";
+      setIsWorking(true);
+      setStatus("Validating GitHub token...");
 
-        if (Platform.OS === 'web') {
-          if (!window.confirm(msg)) return;
-        } else {
-          return new Promise<void>((resolve) => {
-            Alert.alert(
-              "Invalid Token Format",
-              msg,
-              [
-                { text: "Cancel", style: "cancel", onPress: () => resolve() },
-                { 
-                  text: "Save Anyway", 
-                  onPress: async () => {
-                    await performTokenSave(trimmedToken);
-                    resolve();
-                  } 
-                },
-              ]
-            );
-          });
-        }
+      // 1️⃣ Fast format check
+      if (!isValidGitHubTokenFormat(trimmedToken)) {
+        Alert.alert(
+          "Invalid Token",
+          "This token does not match GitHub's token format.\n\n" +
+          "It should start with:\n• ghp_\n• github_pat_"
+        );
+        setIsWorking(false);
+        return;
       }
+
+      // 2️⃣ Live GitHub API validation
+      const validation = await validateGitHubToken(trimmedToken);
+
+      if (!validation.valid) {
+        Alert.alert(
+          "Token Validation Failed",
+          validation.reason || "Unable to validate GitHub token"
+        );
+        setIsWorking(false);
+        return;
+      }
+
+      // ✅ Token is verified
+      setStatus(`Authenticated as ${validation.username}`);
 
       await performTokenSave(trimmedToken);
+
     } catch (err) {
       console.error("Token save error:", err);
-      const msg = "Could not save token.";
-      if (Platform.OS === 'web') {
-        window.alert(msg);
-      } else {
-        Alert.alert("Save failed", msg);
-      }
+      Alert.alert("Error", "Failed to validate GitHub token.");
+    } finally {
+      setIsWorking(false);
     }
   };
+
+  const validateToken = async (token: string) => {
+    const validation = await validateGitHubToken(token);
+    if (validation.valid) {
+      setStatus(`Connected as @${validation.username}`);
+    } else {
+      setStatus("Failed to validate GitHub token.");
+    }
+  };
+
 
   const performTokenSave = async (token: string) => {
     await Storage.setItemAsync(GITHUB_TOKEN_KEY, token);
