@@ -17,8 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   decryptWithMasterKey,
   encryptWithMasterKey,
-  getOrCreateMasterKey,
-  isValidGitHubToken,
+  getOrCreateMasterKey
 } from "./utils/crypto";
 import { Storage } from "./utils/storage";
 
@@ -167,11 +166,11 @@ export default function SettingsScreen() {
     })();
   }, []);
 
-  // Save PAT with validation
+  // Enhanced saveToken function with comprehensive validation
   const saveToken = async () => {
     try {
       const trimmedToken = githubToken.trim();
-      
+
       if (!trimmedToken) {
         const msg = "Please enter your GitHub Personal Access Token.";
         if (Platform.OS === 'web') {
@@ -182,48 +181,75 @@ export default function SettingsScreen() {
         return;
       }
 
-      // Validate token format
-      if (!isValidGitHubToken(trimmedToken)) {
-        const msg = 
-          "This doesn't look like a valid GitHub token.\n\n" +
-          "GitHub tokens typically:\n" +
-          "• Are 40+ characters long\n" +
-          "• Start with 'ghp_', 'github_pat_', or similar\n\n" +
-          "Do you want to save it anyway?";
+      // Import validation functions
+      const { validateGitHubToken, showValidationResult } =
+        await import("./utils/githubTokenValidation");
+
+      // Show validation in progress
+      setStatus("Validating GitHub token...");
+      setIsWorking(true);
+
+      // Validate token
+      const validationResult = await validateGitHubToken(trimmedToken);
+
+      if (!validationResult.isValid) {
+        setIsWorking(false);
+        setStatus(`Validation failed: ${validationResult.error}`);
+
+        const msg =
+          `GitHub Token Validation Failed\n\n${validationResult.error}\n\n` +
+          `Please check:\n` +
+          `• Token is copied correctly\n` +
+          `• Token hasn't been revoked\n` +
+          `• Token hasn't expired`;
 
         if (Platform.OS === 'web') {
-          if (!window.confirm(msg)) return;
+          window.alert(msg);
         } else {
-          return new Promise<void>((resolve) => {
-            Alert.alert(
-              "Invalid Token Format",
-              msg,
-              [
-                { text: "Cancel", style: "cancel", onPress: () => resolve() },
-                { 
-                  text: "Save Anyway", 
-                  onPress: async () => {
-                    await performTokenSave(trimmedToken);
-                    resolve();
-                  } 
-                },
-              ]
-            );
-          });
+          Alert.alert("Invalid Token", msg);
         }
+        return;
       }
 
+      // Token is valid - show success and scope info
+      setStatus("Token validated successfully!");
+
+      let successMsg = `✅ Token validated for ${validationResult.username}\n\n`;
+
+      if (validationResult.hasGistScope) {
+        successMsg += `✓ Gist permission enabled\n`;
+        successMsg += `Your vault will be backed up to GitHub Gists.`;
+      } else {
+        successMsg += `⚠️ No Gist permission detected\n\n`;
+        successMsg += `Your token will be used for:\n`;
+        successMsg += `• Deriving encryption keys\n`;
+        successMsg += `• Local vault encryption\n\n`;
+        successMsg += `To enable cloud backups, recreate the token with "gist" scope.`;
+      }
+
+      if (Platform.OS === 'web') {
+        window.alert(successMsg);
+      } else {
+        Alert.alert("Token Validated", successMsg);
+      }
+
+      // Proceed with saving
       await performTokenSave(trimmedToken);
+
     } catch (err) {
       console.error("Token save error:", err);
-      const msg = "Could not save token.";
+      setIsWorking(false);
+      setStatus("Validation failed");
+
+      const msg = err instanceof Error ? err.message : "Could not validate token.";
       if (Platform.OS === 'web') {
-        window.alert(msg);
+        window.alert(`Error: ${msg}`);
       } else {
-        Alert.alert("Save failed", msg);
+        Alert.alert("Validation failed", msg);
       }
     }
   };
+
 
   const performTokenSave = async (token: string) => {
     await Storage.setItemAsync(GITHUB_TOKEN_KEY, token);
