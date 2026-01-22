@@ -226,7 +226,7 @@ export default function AccountForm({
         }}
       >
         <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={20} color="#000" style={{ marginLeft: 8 }} />
+          <Ionicons name="arrow-back" size={20} color="#000" />
         </Pressable>
 
         <Text style={{ fontSize: 17, fontWeight: "600" }}>
@@ -237,14 +237,14 @@ export default function AccountForm({
           onPress={handleSubmit}
           disabled={isSaving}
           style={{
-            paddingHorizontal: 16,
-            paddingVertical: 8,
+            paddingHorizontal: 12,
+            paddingVertical: 6,
             backgroundColor: "#000",
-            borderRadius: 10,
+            borderRadius: 8,
             opacity: isSaving ? 0.5 : 1,
           }}
         >
-          <Text style={{ color: "#fff", fontWeight: "600" }}>
+          <Text style={{ color: "#fff", fontWeight: "600", fontSize: 15 }}>
             {isSaving ? "Saving…" : "Save"}
           </Text>
         </Pressable>
