@@ -18,11 +18,8 @@ import {
   decryptWithMasterKey,
   encryptWithMasterKey,
   getOrCreateMasterKey,
+  isValidGitHubToken,
 } from "./utils/crypto";
-import {
-  isValidGitHubTokenFormat,
-  validateGitHubToken,
-} from "./utils/githubTokenValidation";
 import { Storage } from "./utils/storage";
 
 /**
@@ -106,24 +103,30 @@ export default function SettingsScreen() {
 
   // Toggle auto-restore function
   const toggleAutoRestore = async (enabled: boolean) => {
+    setAutoRestoreEnabled(enabled);
     try {
-      const { setAutoRestoreEnabled } = await import("./utils/backupUtils");
-      await setAutoRestoreEnabled(enabled);
-      setAutoRestoreEnabled(enabled);
-      
-      const msg = enabled 
-        ? "Auto-restore enabled. Your accounts will sync automatically."
-        : "Auto-restore disabled. You'll need to restore manually.";
-      
-      if (Platform.OS === 'web') {
+      const { setAutoRestoreEnabled: persistAutoRestore } =
+        await import("./utils/backupUtils");
+
+      await persistAutoRestore(enabled);
+
+      const msg = enabled
+        ? "Auto-sync enabled. Your accounts will sync automatically."
+        : "Auto-sync disabled. You'll need to sync manually.";
+
+      if (Platform.OS === "web") {
         window.alert(msg);
       } else {
-        Alert.alert("Auto-Restore", msg);
+        Alert.alert("Auto Sync", msg);
       }
     } catch (err) {
       console.error("Failed to toggle auto-restore:", err);
+
+      // rollback on failure
+      setAutoRestoreEnabled(!enabled);
     }
   };
+
 
   // Load saved values
   useEffect(() => {
@@ -168,60 +171,59 @@ export default function SettingsScreen() {
   const saveToken = async () => {
     try {
       const trimmedToken = githubToken.trim();
-
+      
       if (!trimmedToken) {
-        Alert.alert("Missing token", "Please enter your GitHub Personal Access Token.");
+        const msg = "Please enter your GitHub Personal Access Token.";
+        if (Platform.OS === 'web') {
+          window.alert(msg);
+        } else {
+          Alert.alert("Missing token", msg);
+        }
         return;
       }
 
-      setIsWorking(true);
-      setStatus("Validating GitHub token...");
+      // Validate token format
+      if (!isValidGitHubToken(trimmedToken)) {
+        const msg = 
+          "This doesn't look like a valid GitHub token.\n\n" +
+          "GitHub tokens typically:\n" +
+          "• Are 40+ characters long\n" +
+          "• Start with 'ghp_', 'github_pat_', or similar\n\n" +
+          "Do you want to save it anyway?";
 
-      // 1️⃣ Fast format check
-      if (!isValidGitHubTokenFormat(trimmedToken)) {
-        Alert.alert(
-          "Invalid Token",
-          "This token does not match GitHub's token format.\n\n" +
-          "It should start with:\n• ghp_\n• github_pat_"
-        );
-        setIsWorking(false);
-        return;
+        if (Platform.OS === 'web') {
+          if (!window.confirm(msg)) return;
+        } else {
+          return new Promise<void>((resolve) => {
+            Alert.alert(
+              "Invalid Token Format",
+              msg,
+              [
+                { text: "Cancel", style: "cancel", onPress: () => resolve() },
+                { 
+                  text: "Save Anyway", 
+                  onPress: async () => {
+                    await performTokenSave(trimmedToken);
+                    resolve();
+                  } 
+                },
+              ]
+            );
+          });
+        }
       }
-
-      // 2️⃣ Live GitHub API validation
-      const validation = await validateGitHubToken(trimmedToken);
-
-      if (!validation.valid) {
-        Alert.alert(
-          "Token Validation Failed",
-          validation.reason || "Unable to validate GitHub token"
-        );
-        setIsWorking(false);
-        return;
-      }
-
-      // ✅ Token is verified
-      setStatus(`Authenticated as ${validation.username}`);
 
       await performTokenSave(trimmedToken);
-
     } catch (err) {
       console.error("Token save error:", err);
-      Alert.alert("Error", "Failed to validate GitHub token.");
-    } finally {
-      setIsWorking(false);
+      const msg = "Could not save token.";
+      if (Platform.OS === 'web') {
+        window.alert(msg);
+      } else {
+        Alert.alert("Save failed", msg);
+      }
     }
   };
-
-  const validateToken = async (token: string) => {
-    const validation = await validateGitHubToken(token);
-    if (validation.valid) {
-      setStatus(`Connected as @${validation.username}`);
-    } else {
-      setStatus("Failed to validate GitHub token.");
-    }
-  };
-
 
   const performTokenSave = async (token: string) => {
     await Storage.setItemAsync(GITHUB_TOKEN_KEY, token);
@@ -1017,7 +1019,7 @@ export default function SettingsScreen() {
               <Switch
                 value={autoRestoreEnabled}
                 onValueChange={toggleAutoRestore}
-                trackColor={{ false: "#cbced4", true: "#34C759" }}
+                trackColor={{ false: "#cbced4", true: "#000000" }}
                 thumbColor="#fff"
                 ios_backgroundColor="#cbced4"
                 disabled={!hasToken}
@@ -1216,7 +1218,7 @@ export default function SettingsScreen() {
         {/* Divider */}
         <View style={{ height: 1, backgroundColor: "rgba(0,0,0,0.1)", marginVertical: 32 }} />
 
-        {/* Security Section */}
+        {/* Security Section
         <View style={{ paddingHorizontal: 24, marginBottom: 40 }}>
           <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 16 }}>
             Security
@@ -1239,7 +1241,7 @@ export default function SettingsScreen() {
               Lock Vault
             </Text>
           </TouchableOpacity>
-        </View>
+        </View> */}
 
         {/* Footer with App Version */}
         <View style={{ alignItems: "center", marginTop: 32, marginBottom: 40 }}>
