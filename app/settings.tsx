@@ -14,11 +14,13 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import PinSetupScreen from "./components/PinSetupScreen";
 import {
   decryptWithMasterKey,
   encryptWithMasterKey,
   getOrCreateMasterKey
 } from "./utils/crypto";
+import { hasPin } from "./utils/pinSecurity";
 import { Storage } from "./utils/storage";
 
 /**
@@ -50,8 +52,8 @@ export default function SettingsScreen() {
   const [autoRestoreEnabled, setAutoRestoreEnabled] = useState(true);
   const [syncStatus, setSyncStatus] = useState<string>("Idle");
   const syncProgress = useRef(new Animated.Value(0)).current;
-
-
+  const [showPinSetup, setShowPinSetup] = useState(false);
+  const [hasPinConfigured, setHasPinConfigured] = useState(false);
 
   // Hide default header and use custom header
   useLayoutEffect(() => {
@@ -59,6 +61,14 @@ export default function SettingsScreen() {
       headerShown: false,
     });
   }, [navigation]);
+
+  // Check if PIN is configured
+  useEffect(() => {
+    (async () => {
+      const pinExists = await hasPin();
+      setHasPinConfigured(pinExists);
+    })();
+  }, []);
 
   // Load auto-restore setting
   useEffect(() => {
@@ -126,7 +136,6 @@ export default function SettingsScreen() {
     }
   };
 
-
   // Load saved values
   useEffect(() => {
     (async () => {
@@ -140,7 +149,7 @@ export default function SettingsScreen() {
         if (t) {
           setHasToken(true);
           setMaskedToken("ghp_" + "•".repeat(32) + (t.slice(-4) || ""));
-          setGithubToken(t); // Store full token for viewing
+          setGithubToken(t);
         } else {
           setHasToken(false);
           setMaskedToken("");
@@ -182,7 +191,7 @@ export default function SettingsScreen() {
       }
 
       // Import validation functions
-      const { validateGitHubToken, showValidationResult } =
+      const { validateGitHubToken } =
         await import("./utils/githubTokenValidation");
 
       // Show validation in progress
@@ -250,7 +259,6 @@ export default function SettingsScreen() {
     }
   };
 
-
   const performTokenSave = async (token: string) => {
     await Storage.setItemAsync(GITHUB_TOKEN_KEY, token);
     setHasToken(true);
@@ -264,7 +272,23 @@ export default function SettingsScreen() {
       setGistId(gistIdInput.trim());
     }
     
-    // Auto-restore from existing gist if found
+    // Check if PIN is already set
+    const pinExists = await hasPin();
+    
+    if (!pinExists) {
+      // Show PIN setup for first-time users
+      setStatus("Token saved! Now set up your security PIN.");
+      setShowPinSetup(true);
+      setIsWorking(false);
+      return; // Don't continue with auto-restore yet
+    }
+    
+    // If PIN already exists, continue with auto-restore flow
+    await continueWithAutoRestore(token);
+  };
+
+  // Extract auto-restore logic into separate function
+  const continueWithAutoRestore = async (token: string) => {
     setStatus("Checking for existing backups...");
     try {
       const { findBackupGistId, getGistBackup } = await import("./utils/githubBackup");
@@ -352,6 +376,45 @@ export default function SettingsScreen() {
       } else {
         Alert.alert("Saved", msg);
       }
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
+  // Handler for when PIN setup is complete
+  const handlePinSetupComplete = async () => {
+    setShowPinSetup(false);
+    setHasPinConfigured(true);
+    
+    const msg = "Security PIN set successfully! Your app is now protected.";
+    if (Platform.OS === 'web') {
+      window.alert(msg);
+    } else {
+      Alert.alert("Success", msg);
+    }
+    
+    // Continue with auto-restore flow
+    const token = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
+    if (token) {
+      await continueWithAutoRestore(token);
+    }
+  };
+
+  // Handler for skipping PIN setup
+  const handleSkipPinSetup = async () => {
+    setShowPinSetup(false);
+    
+    const msg = "You can set up a PIN later in Settings for added security.";
+    if (Platform.OS === 'web') {
+      window.alert(msg);
+    } else {
+      Alert.alert("PIN Skipped", msg);
+    }
+
+    // Continue with auto-restore flow
+    const token = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
+    if (token) {
+      await continueWithAutoRestore(token);
     }
   };
 
@@ -361,6 +424,7 @@ export default function SettingsScreen() {
       "⚠️ WARNING: This will permanently delete:\n\n" +
       "• All your accounts\n" +
       "• Your GitHub token\n" +
+      "• Your security PIN\n" +
       "• All backup metadata\n" +
       "• All encrypted data\n\n" +
       "This action cannot be undone!\n\n" +
@@ -400,6 +464,19 @@ export default function SettingsScreen() {
       await Storage.deleteItemAsync(LAST_BACKUP_KEY);
       await Storage.deleteItemAsync(BACKUP_HISTORY_KEY);
 
+      // Delete PIN data
+      const { removePin } = await import("./utils/pinSecurity");
+      try {
+        // Force remove PIN without verification since we're clearing everything
+        await Storage.deleteItemAsync("security_pin_hash");
+        await Storage.deleteItemAsync("security_pin_salt");
+        await Storage.deleteItemAsync("app_locked");
+        await Storage.deleteItemAsync("failed_pin_attempts");
+        await Storage.deleteItemAsync("lockout_until");
+      } catch (err) {
+        console.warn("Failed to clear PIN data:", err);
+      }
+
       console.log("✅ All data cleared");
 
       setHasToken(false);
@@ -411,6 +488,7 @@ export default function SettingsScreen() {
       setStatus("");
       setGithubToken("");
       setShowToken(false);
+      setHasPinConfigured(false);
 
       const msg = "All data has been cleared successfully.";
       if (Platform.OS === 'web') {
@@ -432,58 +510,55 @@ export default function SettingsScreen() {
     }
   };
 
-  // Lock vault - clear master key to require re-authentication
-  const lockVault = async () => {
-    const confirmMessage = 
-      "Lock Vault?\n\n" +
-      "This will clear your encryption key. You'll need to add your GitHub token again to decrypt your data.\n\n" +
-      "Your accounts will remain, but you won't be able to view passwords/OTP codes until you unlock.";
-    
-    if (Platform.OS === 'web') {
-      const confirmed = window.confirm(confirmMessage);
-      if (!confirmed) return;
-      await performLockVault();
-    } else {
-      Alert.alert(
-        "Lock Vault",
-        confirmMessage,
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Lock", style: "destructive", onPress: performLockVault },
-        ]
-      );
-    }
+  // Change PIN
+  const handleChangePin = () => {
+    setShowPinSetup(true);
   };
 
-  const performLockVault = async () => {
-    try {
-      const { deleteMasterKey } = await import("./utils/crypto");
-      await deleteMasterKey();
-      
-      // Clear token to force re-entry
-      await Storage.deleteItemAsync(GITHUB_TOKEN_KEY);
-      await Storage.deleteItemAsync(BACKUP_GIST_ID_KEY);
-      
-      setHasToken(false);
-      setMaskedToken("");
-      setGistId(null);
-      setGistIdInput("");
-      setGithubToken("");
-      setShowToken(false);
+  // Remove PIN
+  const handleRemovePin = async () => {
+    const confirmMessage = 
+      "Remove Security PIN?\n\n" +
+      "This will disable PIN protection for your app. Anyone with access to your device will be able to view your authenticator codes.\n\n" +
+      "Are you sure?";
+    
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm(confirmMessage)
+      : await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            "Remove PIN",
+            confirmMessage,
+            [
+              { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+              { text: "Remove", style: "destructive", onPress: () => resolve(true) },
+            ]
+          );
+        });
 
-      const msg = "Vault locked. Add your GitHub token to unlock.";
+    if (!confirmed) return;
+
+    try {
+      // Force remove PIN
+      await Storage.deleteItemAsync("security_pin_hash");
+      await Storage.deleteItemAsync("security_pin_salt");
+      await Storage.deleteItemAsync("app_locked");
+      await Storage.deleteItemAsync("failed_pin_attempts");
+      await Storage.deleteItemAsync("lockout_until");
+
+      setHasPinConfigured(false);
+
+      const msg = "Security PIN removed successfully.";
       if (Platform.OS === 'web') {
         window.alert(msg);
       } else {
-        Alert.alert("Vault Locked", msg);
+        Alert.alert("Success", msg);
       }
-    } catch (err: any) {
-      console.error("❌ Lock vault failed:", err);
-      const msg = err.message || "Could not lock vault.";
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to remove PIN";
       if (Platform.OS === 'web') {
-        window.alert(`Failed: ${msg}`);
+        window.alert(`Error: ${msg}`);
       } else {
-        Alert.alert("Lock failed", msg);
+        Alert.alert("Error", msg);
       }
     }
   };
@@ -901,6 +976,24 @@ export default function SettingsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
+      {/* PIN Setup Modal */}
+      {showPinSetup && (
+        <View style={{ 
+          position: 'absolute', 
+          top: 0, 
+          left: 0, 
+          right: 0, 
+          bottom: 0, 
+          backgroundColor: '#fff',
+          zIndex: 1000 
+        }}>
+          <PinSetupScreen 
+            onPinSetup={handlePinSetupComplete}
+            onSkip={handleSkipPinSetup}
+          />
+        </View>
+      )}
+
       {/* Custom Header */}
       <View
         style={{
@@ -1066,7 +1159,7 @@ export default function SettingsScreen() {
                 }}
                 disabled={isWorking}
               >
-                {isWorking && status.includes("Checking") ? (
+                {isWorking && status.includes("Validating") ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
                   <Text style={{ color: "#fff", fontSize: 14, fontWeight: "500" }}>
@@ -1159,6 +1252,79 @@ export default function SettingsScreen() {
         {/* Divider */}
         <View style={{ height: 1, backgroundColor: "rgba(0,0,0,0.1)", marginVertical: 32 }} />
 
+        {/* Security Section */}
+        <View style={{ paddingHorizontal: 24 }}>
+          <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 16 }}>
+            Security
+          </Text>
+          <View style={{ gap: 8 }}>
+            {/* Setup/Change PIN */}
+            {!hasPinConfigured ? (
+              <TouchableOpacity
+                onPress={handleChangePin}
+                style={{
+                  backgroundColor: "#fff",
+                  borderWidth: 0.6,
+                  borderColor: "rgba(0,0,0,0.1)",
+                  height: 44,
+                  borderRadius: 8,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingHorizontal: 12,
+                }}
+              >
+                <Ionicons name="lock-closed-outline" size={16} color="#0a0a0a" />
+                <Text style={{ color: "#0a0a0a", fontSize: 14, fontWeight: "500", marginLeft: 12 }}>
+                  Set Up PIN
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <>
+                <TouchableOpacity
+                  onPress={handleChangePin}
+                  style={{
+                    backgroundColor: "#fff",
+                    borderWidth: 0.6,
+                    borderColor: "rgba(0,0,0,0.1)",
+                    height: 44,
+                    borderRadius: 8,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingHorizontal: 12,
+                  }}
+                >
+                  <Ionicons name="key-outline" size={16} color="#0a0a0a" />
+                  <Text style={{ color: "#0a0a0a", fontSize: 14, fontWeight: "500", marginLeft: 12 }}>
+                    Change PIN
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={handleRemovePin}
+                  style={{
+                    backgroundColor: "#fff",
+                    borderWidth: 0.6,
+                    borderColor: "rgba(0,0,0,0.1)",
+                    height: 44,
+                    borderRadius: 8,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingHorizontal: 12,
+                  }}
+                >
+                  <Ionicons name="lock-open-outline" size={16} color="#e7000b" />
+                  <Text style={{ color: "#e7000b", fontSize: 14, fontWeight: "500", marginLeft: 12 }}>
+                    Remove PIN
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+
+        {/* Divider */}
+        <View style={{ height: 1, backgroundColor: "rgba(0,0,0,0.1)", marginVertical: 32 }} />
+
         {/* Data Management Section */}
         <View style={{ paddingHorizontal: 24 }}>
           <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 16 }}>
@@ -1241,34 +1407,6 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Divider */}
-        <View style={{ height: 1, backgroundColor: "rgba(0,0,0,0.1)", marginVertical: 32 }} />
-
-        {/* Security Section
-        <View style={{ paddingHorizontal: 24, marginBottom: 40 }}>
-          <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 16 }}>
-            Security
-          </Text>
-          <TouchableOpacity
-            onPress={lockVault}
-            style={{
-              backgroundColor: "#fff",
-              borderWidth: 0.6,
-              borderColor: "rgba(0,0,0,0.1)",
-              height: 44,
-              borderRadius: 8,
-              flexDirection: "row",
-              alignItems: "center",
-              paddingHorizontal: 12,
-            }}
-          >
-            <Ionicons name="lock-closed-outline" size={16} color="#0a0a0a" />
-            <Text style={{ color: "#0a0a0a", fontSize: 14, fontWeight: "500", marginLeft: 12 }}>
-              Lock Vault
-            </Text>
-          </TouchableOpacity>
-        </View> */}
-
         {/* Footer with App Version */}
         <View style={{ alignItems: "center", marginTop: 32, marginBottom: 40 }}>
           <View style={{
@@ -1291,7 +1429,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* Status Display */}
-        {status && !status.includes("Checking") && (
+        {status && !status.includes("Validating") && (
           <View style={{ 
             marginHorizontal: 24,
             marginBottom: 16,
