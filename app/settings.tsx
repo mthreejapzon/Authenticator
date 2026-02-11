@@ -15,10 +15,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import PinSetupScreen from "./components/PinSetupScreen";
+import PinVerificationScreen from "./components/PinVerificationScreen";
 import {
   decryptWithMasterKey,
   encryptWithMasterKey,
-  getOrCreateMasterKey
+  getOrCreateMasterKey,
 } from "./utils/crypto";
 import { hasPin } from "./utils/pinSecurity";
 import { Storage } from "./utils/storage";
@@ -32,7 +33,12 @@ const LAST_BACKUP_KEY = "last_backup_at";
 const BACKUP_HISTORY_KEY = "backup_history";
 const USER_ACCOUNT_KEYS = "userAccountKeys";
 
-type BackupHistoryItem = { id: string; gistId: string; atIso: string; note?: string };
+type BackupHistoryItem = {
+  id: string;
+  gistId: string;
+  atIso: string;
+  note?: string;
+};
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -54,6 +60,9 @@ export default function SettingsScreen() {
   const syncProgress = useRef(new Animated.Value(0)).current;
   const [showPinSetup, setShowPinSetup] = useState(false);
   const [hasPinConfigured, setHasPinConfigured] = useState(false);
+  const [isInitialSetup, setIsInitialSetup] = useState(false);
+  const [showPinVerification, setShowPinVerification] = useState(false);
+  const [isRemovingPin, setIsRemovingPin] = useState(false);
 
   // Hide default header and use custom header
   useLayoutEffect(() => {
@@ -90,7 +99,7 @@ export default function SettingsScreen() {
     (async () => {
       try {
         const { onSyncStateChange } = await import("./utils/backupUtils");
-        
+
         unsubscribe = onSyncStateChange((syncing) => {
           if (syncing) {
             setSyncStatus("Syncing...");
@@ -182,7 +191,7 @@ export default function SettingsScreen() {
 
       if (!trimmedToken) {
         const msg = "Please enter your GitHub Personal Access Token.";
-        if (Platform.OS === 'web') {
+        if (Platform.OS === "web") {
           window.alert(msg);
         } else {
           Alert.alert("Missing token", msg);
@@ -212,7 +221,7 @@ export default function SettingsScreen() {
           `• Token hasn't been revoked\n` +
           `• Token hasn't expired`;
 
-        if (Platform.OS === 'web') {
+        if (Platform.OS === "web") {
           window.alert(msg);
         } else {
           Alert.alert("Invalid Token", msg);
@@ -236,7 +245,7 @@ export default function SettingsScreen() {
         successMsg += `To enable cloud backups, recreate the token with "gist" scope.`;
       }
 
-      if (Platform.OS === 'web') {
+      if (Platform.OS === "web") {
         window.alert(successMsg);
       } else {
         Alert.alert("Token Validated", successMsg);
@@ -244,14 +253,14 @@ export default function SettingsScreen() {
 
       // Proceed with saving
       await performTokenSave(trimmedToken);
-
     } catch (err) {
       console.error("Token save error:", err);
       setIsWorking(false);
       setStatus("Validation failed");
 
-      const msg = err instanceof Error ? err.message : "Could not validate token.";
-      if (Platform.OS === 'web') {
+      const msg =
+        err instanceof Error ? err.message : "Could not validate token.";
+      if (Platform.OS === "web") {
         window.alert(`Error: ${msg}`);
       } else {
         Alert.alert("Validation failed", msg);
@@ -265,24 +274,25 @@ export default function SettingsScreen() {
     setMaskedToken("ghp_" + "•".repeat(32) + token.slice(-4));
     setGithubToken(token);
     setShowToken(false);
-    
+
     // Save Gist ID if provided
     if (gistIdInput.trim()) {
       await Storage.setItemAsync(BACKUP_GIST_ID_KEY, gistIdInput.trim());
       setGistId(gistIdInput.trim());
     }
-    
+
     // Check if PIN is already set
     const pinExists = await hasPin();
-    
+
     if (!pinExists) {
-      // Show PIN setup for first-time users
+      // Show PIN setup for first-time users - this is initial setup
       setStatus("Token saved! Now set up your security PIN.");
+      setIsInitialSetup(true); // Mark as initial setup
       setShowPinSetup(true);
       setIsWorking(false);
       return; // Don't continue with auto-restore yet
     }
-    
+
     // If PIN already exists, continue with auto-restore flow
     await continueWithAutoRestore(token);
   };
@@ -291,12 +301,13 @@ export default function SettingsScreen() {
   const continueWithAutoRestore = async (token: string) => {
     setStatus("Checking for existing backups...");
     try {
-      const { findBackupGistId, getGistBackup } = await import("./utils/githubBackup");
+      const { findBackupGistId, getGistBackup } =
+        await import("./utils/githubBackup");
       const { importAllAccounts } = await import("./utils/backupUtils");
-      
+
       // Look for existing gist
       const existingGistId = await findBackupGistId(token);
-      
+
       if (existingGistId) {
         // Update gist ID if found
         if (!gistIdInput.trim()) {
@@ -304,41 +315,46 @@ export default function SettingsScreen() {
           setGistIdInput(existingGistId);
           await Storage.setItemAsync(BACKUP_GIST_ID_KEY, existingGistId);
         }
-        
-        const shouldRestore = Platform.OS === 'web'
-          ? window.confirm(
-              `Found existing backup in your GitHub Gists!\n\n` +
-              `Gist ID: ${existingGistId}\n\n` +
-              `Would you like to restore your accounts from this backup?`
-            )
-          : await new Promise<boolean>((resolve) => {
-              Alert.alert(
-                "Backup Found!",
-                `Found existing backup (Gist ID: ${existingGistId})\n\nRestore your accounts from this backup?`,
-                [
-                  { text: "Not Now", style: "cancel", onPress: () => resolve(false) },
-                  { text: "Restore", onPress: () => resolve(true) },
-                ]
-              );
-            });
+
+        const shouldRestore =
+          Platform.OS === "web"
+            ? window.confirm(
+                `Found existing backup in your GitHub Gists!\n\n` +
+                  `Gist ID: ${existingGistId}\n\n` +
+                  `Would you like to restore your accounts from this backup?`,
+              )
+            : await new Promise<boolean>((resolve) => {
+                Alert.alert(
+                  "Backup Found!",
+                  `Found existing backup (Gist ID: ${existingGistId})\n\nRestore your accounts from this backup?`,
+                  [
+                    {
+                      text: "Not Now",
+                      style: "cancel",
+                      onPress: () => resolve(false),
+                    },
+                    { text: "Restore", onPress: () => resolve(true) },
+                  ],
+                );
+              });
 
         if (shouldRestore) {
           setStatus("Restoring accounts from backup...");
-          
+
           // Fetch and import backup
           const cipherText = await getGistBackup(token);
           if (cipherText) {
             await importAllAccounts(cipherText);
-            
+
             setGistId(existingGistId);
             setGistIdInput(existingGistId);
             const keysString = await Storage.getItemAsync("userAccountKeys");
             const keys = keysString ? JSON.parse(keysString) : [];
             const count = keys.length || 0;
             setStatus(`Restored ${count} account(s) successfully!`);
-            
+
             const successMsg = `Successfully restored ${count} account(s) from backup!`;
-            if (Platform.OS === 'web') {
+            if (Platform.OS === "web") {
               window.alert(successMsg);
             } else {
               Alert.alert("Restore Complete", successMsg);
@@ -348,9 +364,9 @@ export default function SettingsScreen() {
           }
         } else {
           setStatus("Token saved. Auto-sync enabled.");
-          
+
           const msg = "GitHub token saved. Auto-sync is now enabled.";
-          if (Platform.OS === 'web') {
+          if (Platform.OS === "web") {
             window.alert(msg);
           } else {
             Alert.alert("Saved", msg);
@@ -358,9 +374,10 @@ export default function SettingsScreen() {
         }
       } else {
         setStatus("Token saved. Auto-sync enabled.");
-        
-        const msg = "GitHub token saved. Auto-sync is now enabled. Your accounts will be automatically backed up.";
-        if (Platform.OS === 'web') {
+
+        const msg =
+          "GitHub token saved. Auto-sync is now enabled. Your accounts will be automatically backed up.";
+        if (Platform.OS === "web") {
           window.alert(msg);
         } else {
           Alert.alert("Saved", msg);
@@ -369,9 +386,10 @@ export default function SettingsScreen() {
     } catch (err) {
       console.error("Auto-restore check failed:", err);
       setStatus("Token saved (auto-restore failed)");
-      
-      const msg = "Token saved, but couldn't check for existing backups. You can manually restore from the Restore screen.";
-      if (Platform.OS === 'web') {
+
+      const msg =
+        "Token saved, but couldn't check for existing backups. You can manually restore from the Restore screen.";
+      if (Platform.OS === "web") {
         window.alert(msg);
       } else {
         Alert.alert("Saved", msg);
@@ -385,42 +403,68 @@ export default function SettingsScreen() {
   const handlePinSetupComplete = async () => {
     setShowPinSetup(false);
     setHasPinConfigured(true);
-    
-    const msg = "Security PIN set successfully! Your app is now protected.";
-    if (Platform.OS === 'web') {
-      window.alert(msg);
+
+    // Only proceed with auto-restore if this was initial setup
+    if (isInitialSetup) {
+      const msg = "Security PIN set successfully! Your app is now protected.";
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Success", msg);
+      }
+
+      // Continue with auto-restore flow
+      const token = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
+      if (token) {
+        await continueWithAutoRestore(token);
+      }
+
+      setIsInitialSetup(false); // Reset flag
     } else {
-      Alert.alert("Success", msg);
-    }
-    
-    // Continue with auto-restore flow
-    const token = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
-    if (token) {
-      await continueWithAutoRestore(token);
+      // Just changing PIN - no auto-restore
+      const msg = "Security PIN changed successfully!";
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Success", msg);
+      }
     }
   };
 
   // Handler for skipping PIN setup
   const handleSkipPinSetup = async () => {
     setShowPinSetup(false);
-    
-    const msg = "You can set up a PIN later in Settings for added security.";
-    if (Platform.OS === 'web') {
-      window.alert(msg);
-    } else {
-      Alert.alert("PIN Skipped", msg);
-    }
 
-    // Continue with auto-restore flow
-    const token = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
-    if (token) {
-      await continueWithAutoRestore(token);
+    // Only proceed with auto-restore if this was initial setup
+    if (isInitialSetup) {
+      const msg = "You can set up a PIN later in Settings for added security.";
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("PIN Skipped", msg);
+      }
+
+      // Continue with auto-restore flow
+      const token = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
+      if (token) {
+        await continueWithAutoRestore(token);
+      }
+
+      setIsInitialSetup(false); // Reset flag
+    } else {
+      // Just canceling PIN change - no message needed
+      const msg = "PIN change canceled.";
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Canceled", msg);
+      }
     }
   };
 
   // Clear all data - accounts, token, and backup metadata
   const clearAllData = async () => {
-    const confirmMessage = 
+    const confirmMessage =
       "⚠️ WARNING: This will permanently delete:\n\n" +
       "• All your accounts\n" +
       "• Your GitHub token\n" +
@@ -429,27 +473,23 @@ export default function SettingsScreen() {
       "• All encrypted data\n\n" +
       "This action cannot be undone!\n\n" +
       "Are you absolutely sure?";
-    
-    if (Platform.OS === 'web') {
+
+    if (Platform.OS === "web") {
       const confirmed = window.confirm(confirmMessage);
       if (!confirmed) return;
       await performClearAll();
     } else {
-      Alert.alert(
-        "Clear All Data",
-        confirmMessage,
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Clear All", style: "destructive", onPress: performClearAll },
-        ]
-      );
+      Alert.alert("Clear All Data", confirmMessage, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Clear All", style: "destructive", onPress: performClearAll },
+      ]);
     }
   };
 
   const performClearAll = async () => {
     try {
       console.log("🗑️ Starting clear all data...");
-      
+
       // Delete all accounts
       const keysString = await Storage.getItemAsync(USER_ACCOUNT_KEYS);
       const keys: string[] = keysString ? JSON.parse(keysString) : [];
@@ -457,7 +497,7 @@ export default function SettingsScreen() {
         await Storage.deleteItemAsync(key);
       }
       await Storage.deleteItemAsync(USER_ACCOUNT_KEYS);
-      
+
       // Delete token and backup metadata
       await Storage.deleteItemAsync(GITHUB_TOKEN_KEY);
       await Storage.deleteItemAsync(BACKUP_GIST_ID_KEY);
@@ -491,18 +531,18 @@ export default function SettingsScreen() {
       setHasPinConfigured(false);
 
       const msg = "All data has been cleared successfully.";
-      if (Platform.OS === 'web') {
+      if (Platform.OS === "web") {
         window.alert(msg);
       } else {
         Alert.alert("Cleared", msg);
       }
-      
+
       // Navigate back to home
       router.replace("/");
     } catch (err: any) {
       console.error("❌ Clear all data failed:", err);
       const msg = err.message || "Could not clear all data.";
-      if (Platform.OS === 'web') {
+      if (Platform.OS === "web") {
         window.alert(`Failed: ${msg}`);
       } else {
         Alert.alert("Clear failed", msg);
@@ -512,28 +552,72 @@ export default function SettingsScreen() {
 
   // Change PIN
   const handleChangePin = () => {
-    setShowPinSetup(true);
+    if (hasPinConfigured) {
+      // User has existing PIN - require verification first
+      setShowPinVerification(true);
+    } else {
+      // No existing PIN - go directly to setup
+      setIsInitialSetup(false);
+      setShowPinSetup(true);
+    }
+  };
+
+  // Handler for when old PIN is verified
+  const handlePinVerified = () => {
+    if (isRemovingPin) {
+      // User verified PIN for removal - proceed with removal
+      handlePinVerifiedForRemoval();
+    } else {
+      // User verified PIN for changing - show setup screen
+      setShowPinVerification(false);
+      setIsInitialSetup(false); // This is NOT initial setup
+      setShowPinSetup(true); // Now show PIN setup to change it
+    }
+  };
+
+  // Handler for when verification is cancelled
+  const handleVerificationCancelled = () => {
+    setShowPinVerification(false);
+    setIsRemovingPin(false); // Reset removal flag
   };
 
   // Remove PIN
   const handleRemovePin = async () => {
-    const confirmMessage = 
+    // First, verify the current PIN
+    setShowPinVerification(true);
+
+    // Store a flag to know we're removing (not changing) the PIN
+    setIsRemovingPin(true);
+  };
+
+  // Handler for when PIN is verified for removal
+  const handlePinVerifiedForRemoval = async () => {
+    setShowPinVerification(false);
+    setIsRemovingPin(false);
+
+    // Now show confirmation dialog
+    const confirmMessage =
       "Remove Security PIN?\n\n" +
       "This will disable PIN protection for your app. Anyone with access to your device will be able to view your authenticator codes.\n\n" +
       "Are you sure?";
-    
-    const confirmed = Platform.OS === 'web'
-      ? window.confirm(confirmMessage)
-      : await new Promise<boolean>((resolve) => {
-          Alert.alert(
-            "Remove PIN",
-            confirmMessage,
-            [
-              { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-              { text: "Remove", style: "destructive", onPress: () => resolve(true) },
-            ]
-          );
-        });
+
+    const confirmed =
+      Platform.OS === "web"
+        ? window.confirm(confirmMessage)
+        : await new Promise<boolean>((resolve) => {
+            Alert.alert("Remove PIN", confirmMessage, [
+              {
+                text: "Cancel",
+                style: "cancel",
+                onPress: () => resolve(false),
+              },
+              {
+                text: "Remove",
+                style: "destructive",
+                onPress: () => resolve(true),
+              },
+            ]);
+          });
 
     if (!confirmed) return;
 
@@ -548,14 +632,14 @@ export default function SettingsScreen() {
       setHasPinConfigured(false);
 
       const msg = "Security PIN removed successfully.";
-      if (Platform.OS === 'web') {
+      if (Platform.OS === "web") {
         window.alert(msg);
       } else {
         Alert.alert("Success", msg);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to remove PIN";
-      if (Platform.OS === 'web') {
+      if (Platform.OS === "web") {
         window.alert(`Error: ${msg}`);
       } else {
         Alert.alert("Error", msg);
@@ -578,7 +662,7 @@ export default function SettingsScreen() {
 
       if (!keys || keys.length === 0) {
         const msg = "No accounts stored.";
-        if (Platform.OS === 'web') {
+        if (Platform.OS === "web") {
           window.alert(msg);
         } else {
           Alert.alert("Nothing to export", msg);
@@ -614,7 +698,7 @@ export default function SettingsScreen() {
         masterKey = await getOrCreateMasterKey();
       } catch (err: any) {
         const msg = err.message || "Native crypto unavailable";
-        if (Platform.OS === 'web') {
+        if (Platform.OS === "web") {
           window.alert(msg);
         } else {
           Alert.alert("Backup failed", msg);
@@ -630,7 +714,7 @@ export default function SettingsScreen() {
 
       if (!hasToken) {
         const msg = "Please save your GitHub token first.";
-        if (Platform.OS === 'web') {
+        if (Platform.OS === "web") {
           window.alert(msg);
         } else {
           Alert.alert("Missing token", msg);
@@ -638,11 +722,11 @@ export default function SettingsScreen() {
         setIsWorking(false);
         return;
       }
-      
+
       const token = (await Storage.getItemAsync(GITHUB_TOKEN_KEY)) || "";
 
       let targetGistId = gistId;
-      
+
       if (targetGistId) {
         setStatus("Verifying backup gist exists...");
         try {
@@ -654,7 +738,7 @@ export default function SettingsScreen() {
                 Authorization: `Bearer ${token}`,
                 Accept: "application/vnd.github+json",
               },
-            }
+            },
           );
 
           if (!verifyRes.ok) {
@@ -680,7 +764,7 @@ export default function SettingsScreen() {
                 Accept: "application/vnd.github+json",
                 "X-Github-Api-Version": "2022-11-28",
               },
-            }
+            },
           );
 
           if (listRes.ok) {
@@ -690,13 +774,16 @@ export default function SettingsScreen() {
               .sort(
                 (a: any, b: any) =>
                   new Date(b.updated_at).getTime() -
-                  new Date(a.updated_at).getTime()
+                  new Date(a.updated_at).getTime(),
               )[0];
 
             if (candidate && candidate.id) {
               console.log("✅ Found existing backup:", candidate.id);
               targetGistId = candidate.id;
-              await Storage.setItemAsync(BACKUP_GIST_ID_KEY, targetGistId as string);
+              await Storage.setItemAsync(
+                BACKUP_GIST_ID_KEY,
+                targetGistId as string,
+              );
               setGistId(targetGistId as string);
             } else {
               console.log("ℹ️ No existing backup found");
@@ -738,13 +825,13 @@ export default function SettingsScreen() {
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
         console.error("❌ Gist operation failed:", res.status, txt);
-        
+
         if (isUpdate && res.status === 404) {
           console.log("🔄 Gist deleted, retrying...");
           await Storage.deleteItemAsync(BACKUP_GIST_ID_KEY);
           setGistId(null);
           setGistIdInput("");
-          
+
           const retryRes = await fetch(`https://api.github.com/gists`, {
             method: "POST",
             headers: {
@@ -766,7 +853,9 @@ export default function SettingsScreen() {
 
           if (!retryRes.ok) {
             const retryTxt = await retryRes.text().catch(() => "");
-            throw new Error(`Failed to create backup: ${retryRes.status} ${retryTxt}`);
+            throw new Error(
+              `Failed to create backup: ${retryRes.status} ${retryTxt}`,
+            );
           }
 
           const retryData = await retryRes.json();
@@ -779,7 +868,10 @@ export default function SettingsScreen() {
         targetGistId = data.id;
       }
 
-      console.log(`✅ Backup ${isUpdate ? "updated" : "created"}:`, targetGistId);
+      console.log(
+        `✅ Backup ${isUpdate ? "updated" : "created"}:`,
+        targetGistId,
+      );
 
       await Storage.setItemAsync(BACKUP_GIST_ID_KEY, targetGistId!);
       await Storage.setItemAsync(LAST_BACKUP_KEY, exportedAt);
@@ -793,19 +885,22 @@ export default function SettingsScreen() {
         atIso: exportedAt,
         note: isUpdate ? "Updated" : "Created",
       };
-      
+
       const newHistory = [
         histItem,
-        ...history.filter(h => h.gistId !== targetGistId)
+        ...history.filter((h) => h.gistId !== targetGistId),
       ].slice(0, 20);
-      
+
       setHistory(newHistory);
-      await Storage.setItemAsync(BACKUP_HISTORY_KEY, JSON.stringify(newHistory));
+      await Storage.setItemAsync(
+        BACKUP_HISTORY_KEY,
+        JSON.stringify(newHistory),
+      );
 
       setStatus(isUpdate ? "Backup updated!" : "Backup created!");
-      
+
       const msg = `${isUpdate ? "Backup updated" : "New backup created"}!\nGist ID: ${targetGistId}`;
-      if (Platform.OS === 'web') {
+      if (Platform.OS === "web") {
         window.alert(msg);
       } else {
         Alert.alert(isUpdate ? "Updated" : "Created", msg);
@@ -813,7 +908,7 @@ export default function SettingsScreen() {
     } catch (err: any) {
       console.error("❌ Export failed:", err);
       const msg = err.message || String(err);
-      if (Platform.OS === 'web') {
+      if (Platform.OS === "web") {
         window.alert(`Backup failed: ${msg}`);
       } else {
         Alert.alert("Backup failed", msg);
@@ -832,7 +927,7 @@ export default function SettingsScreen() {
     try {
       if (!hasToken) {
         const msg = "Please save your GitHub token first.";
-        if (Platform.OS === 'web') {
+        if (Platform.OS === "web") {
           window.alert(msg);
         } else {
           Alert.alert("Missing token", msg);
@@ -844,7 +939,7 @@ export default function SettingsScreen() {
       const token = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
       if (!token) {
         const msg = "GitHub token not found.";
-        if (Platform.OS === 'web') {
+        if (Platform.OS === "web") {
           window.alert(msg);
         } else {
           Alert.alert("Missing token", msg);
@@ -871,12 +966,12 @@ export default function SettingsScreen() {
         .filter((g: any) => g.files && g.files["authenticator_backup.enc"])
         .sort(
           (a: any, b: any) =>
-            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
         );
 
       if (backupGists.length === 0) {
         const msg = "No encrypted backups found in your GitHub Gists.";
-        if (Platform.OS === 'web') {
+        if (Platform.OS === "web") {
           window.alert(msg);
         } else {
           Alert.alert("No backups found", msg);
@@ -893,12 +988,15 @@ export default function SettingsScreen() {
       setGistIdInput(latestGistId);
 
       setStatus("Fetching latest backup...");
-      const gistRes = await fetch(`https://api.github.com/gists/${latestGistId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github+json",
+      const gistRes = await fetch(
+        `https://api.github.com/gists/${latestGistId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+          },
         },
-      });
+      );
 
       if (!gistRes.ok) {
         throw new Error("Failed to fetch backup file");
@@ -928,7 +1026,9 @@ export default function SettingsScreen() {
         console.log("Detected raw cipher format");
         cipher = rawContent;
       } else {
-        throw new Error(`Invalid backup format: ${rawContent.substring(0, 20)}...`);
+        throw new Error(
+          `Invalid backup format: ${rawContent.substring(0, 20)}...`,
+        );
       }
 
       const masterKey = await getOrCreateMasterKey();
@@ -947,7 +1047,7 @@ export default function SettingsScreen() {
 
       setStatus("Restore complete!");
       const msg = `Restored ${keys.length} account(s).`;
-      if (Platform.OS === 'web') {
+      if (Platform.OS === "web") {
         window.alert(msg);
       } else {
         Alert.alert("Restore complete", msg);
@@ -955,7 +1055,7 @@ export default function SettingsScreen() {
     } catch (err: any) {
       console.error("Restore error:", err);
       const msg = err.message || String(err);
-      if (Platform.OS === 'web') {
+      if (Platform.OS === "web") {
         window.alert(`Restore failed: ${msg}`);
       } else {
         Alert.alert("Restore failed", msg);
@@ -968,7 +1068,14 @@ export default function SettingsScreen() {
 
   if (isLoadingToken) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#fff", justifyContent: "center", alignItems: "center" }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: "#fff",
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
         <ActivityIndicator size="large" color="#000" />
       </View>
     );
@@ -976,18 +1083,40 @@ export default function SettingsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
+      {/* PIN Verification Modal */}
+      {showPinVerification && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "#fff",
+            zIndex: 1001,
+          }}
+        >
+          <PinVerificationScreen
+            onVerified={handlePinVerified}
+            onCancel={handleVerificationCancelled}
+          />
+        </View>
+      )}
+
       {/* PIN Setup Modal */}
       {showPinSetup && (
-        <View style={{ 
-          position: 'absolute', 
-          top: 0, 
-          left: 0, 
-          right: 0, 
-          bottom: 0, 
-          backgroundColor: '#fff',
-          zIndex: 1000 
-        }}>
-          <PinSetupScreen 
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "#fff",
+            zIndex: 1000,
+          }}
+        >
+          <PinSetupScreen
             onPinSetup={handlePinSetupComplete}
             onSkip={handleSkipPinSetup}
           />
@@ -1038,22 +1167,37 @@ export default function SettingsScreen() {
         contentContainerStyle={{ flexGrow: 1, paddingBottom: 50 }}
         style={{ flex: 1 }}
       >
-
         {/* GitHub Gist Sync Section */}
         <View style={{ paddingTop: 24, paddingHorizontal: 24 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 16, gap: 12 }}>
-            <View style={{ 
-              backgroundColor: "#f3f4f6", 
-              width: 40, 
-              height: 40, 
-              borderRadius: 10, 
-              justifyContent: "center", 
-              alignItems: "center" 
-            }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginBottom: 16,
+              gap: 12,
+            }}
+          >
+            <View
+              style={{
+                backgroundColor: "#f3f4f6",
+                width: 40,
+                height: 40,
+                borderRadius: 10,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
               <Ionicons name="git-branch-outline" size={20} color="#0a0a0a" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 2 }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: "500",
+                  color: "#0a0a0a",
+                  marginBottom: 2,
+                }}
+              >
                 GitHub Gist Sync
               </Text>
               <Text style={{ fontSize: 12, color: "#6a7282" }}>
@@ -1065,11 +1209,24 @@ export default function SettingsScreen() {
           <View style={{ gap: 8, marginBottom: 16 }}>
             {/* Access Token Input */}
             <View>
-              <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 8 }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: "500",
+                  color: "#0a0a0a",
+                  marginBottom: 8,
+                }}
+              >
                 Access Token
               </Text>
               <TextInput
-                value={hasToken ? (showToken ? githubToken : maskedToken) : githubToken}
+                value={
+                  hasToken
+                    ? showToken
+                      ? githubToken
+                      : maskedToken
+                    : githubToken
+                }
                 onChangeText={setGithubToken}
                 placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
                 placeholderTextColor="#717182"
@@ -1093,7 +1250,13 @@ export default function SettingsScreen() {
                   onPress={() => setShowToken(!showToken)}
                   style={{ alignSelf: "flex-end", marginTop: 4 }}
                 >
-                  <Text style={{ color: "#0a0a0a", fontSize: 12, fontWeight: "500" }}>
+                  <Text
+                    style={{
+                      color: "#0a0a0a",
+                      fontSize: 12,
+                      fontWeight: "500",
+                    }}
+                  >
                     {showToken ? "Hide" : "Show"}
                   </Text>
                 </TouchableOpacity>
@@ -1102,7 +1265,14 @@ export default function SettingsScreen() {
 
             {/* Gist ID Input */}
             <View>
-              <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 8 }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: "500",
+                  color: "#0a0a0a",
+                  marginBottom: 8,
+                }}
+              >
                 Gist ID
               </Text>
               <TextInput
@@ -1126,15 +1296,15 @@ export default function SettingsScreen() {
             </View>
 
             {/* Auto Sync Toggle */}
-            <View style={{ 
-              flexDirection: "row", 
-              justifyContent: "space-between", 
-              alignItems: "center",
-              height: 36,
-            }}>
-              <Text style={{ fontSize: 14, color: "#0a0a0a" }}>
-                Auto Sync
-              </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                height: 36,
+              }}
+            >
+              <Text style={{ fontSize: 14, color: "#0a0a0a" }}>Auto Sync</Text>
               <Switch
                 value={autoRestoreEnabled}
                 onValueChange={toggleAutoRestore}
@@ -1162,7 +1332,9 @@ export default function SettingsScreen() {
                 {isWorking && status.includes("Validating") ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={{ color: "#fff", fontSize: 14, fontWeight: "500" }}>
+                  <Text
+                    style={{ color: "#fff", fontSize: 14, fontWeight: "500" }}
+                  >
                     Save
                   </Text>
                 )}
@@ -1181,10 +1353,19 @@ export default function SettingsScreen() {
                 }}
                 disabled={!hasToken || isWorking}
               >
-                {isWorking && (status.includes("Encrypting") || status.includes("Uploading") || status.includes("Creating")) ? (
+                {isWorking &&
+                (status.includes("Encrypting") ||
+                  status.includes("Uploading") ||
+                  status.includes("Creating")) ? (
                   <ActivityIndicator color="#0a0a0a" size="small" />
                 ) : (
-                  <Text style={{ color: "#0a0a0a", fontSize: 14, fontWeight: "500" }}>
+                  <Text
+                    style={{
+                      color: "#0a0a0a",
+                      fontSize: 14,
+                      fontWeight: "500",
+                    }}
+                  >
                     Sync
                   </Text>
                 )}
@@ -1194,54 +1375,100 @@ export default function SettingsScreen() {
 
           {/* How to Create Token Guide */}
           {!hasToken && (
-            <View style={{ 
-              marginTop: 24,
-              padding: 16,
-              backgroundColor: "#f9fafb",
-              borderRadius: 8,
-              borderWidth: 0.6,
-              borderColor: "#e5e7eb",
-            }}>
-              <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 12 }}>
+            <View
+              style={{
+                marginTop: 24,
+                padding: 16,
+                backgroundColor: "#f9fafb",
+                borderRadius: 8,
+                borderWidth: 0.6,
+                borderColor: "#e5e7eb",
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: "500",
+                  color: "#0a0a0a",
+                  marginBottom: 12,
+                }}
+              >
                 How to Create a Token
               </Text>
 
               <View style={{ gap: 12 }}>
                 <View>
-                  <Text style={{ fontSize: 13, fontWeight: "500", color: "#0a0a0a", marginBottom: 4 }}>
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "500",
+                      color: "#0a0a0a",
+                      marginBottom: 4,
+                    }}
+                  >
                     1. Go to GitHub Settings
                   </Text>
-                  <Text style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}>
+                  <Text
+                    style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}
+                  >
                     Visit github.com/settings/tokens
                   </Text>
                 </View>
 
                 <View>
-                  <Text style={{ fontSize: 13, fontWeight: "500", color: "#0a0a0a", marginBottom: 4 }}>
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "500",
+                      color: "#0a0a0a",
+                      marginBottom: 4,
+                    }}
+                  >
                     2. Generate New Token
                   </Text>
-                  <Text style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}>
+                  <Text
+                    style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}
+                  >
                     Click "Generate new token (classic)"
                   </Text>
                 </View>
 
                 <View>
-                  <Text style={{ fontSize: 13, fontWeight: "500", color: "#0a0a0a", marginBottom: 4 }}>
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "500",
+                      color: "#0a0a0a",
+                      marginBottom: 4,
+                    }}
+                  >
                     3. Configure Token
                   </Text>
-                  <Text style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}>
-                    • Name: "2FA App" or similar{"\n"}
-                    • Expiration: No expiration (recommended){"\n"}
-                    • Scopes: Check "gist" for backups, or leave all unchecked for encryption only
+                  <Text
+                    style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}
+                  >
+                    • Name: "2FA App" or similar{"\n"}• Expiration: No
+                    expiration (recommended){"\n"}• Scopes: Check "gist" for
+                    backups, or leave all unchecked for encryption only
                   </Text>
                 </View>
 
                 <View>
-                  <Text style={{ fontSize: 13, fontWeight: "500", color: "#0a0a0a", marginBottom: 4 }}>
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "500",
+                      color: "#0a0a0a",
+                      marginBottom: 4,
+                    }}
+                  >
                     4. Copy & Save
                   </Text>
-                  <Text style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}>
-                    Copy the token (starts with ghp_) and paste it above. Save it in a password manager as backup!
+                  <Text
+                    style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}
+                  >
+                    Copy the token (starts with ghp_) and paste it above. Save
+                    it in a password manager as backup!
                   </Text>
                 </View>
               </View>
@@ -1250,11 +1477,24 @@ export default function SettingsScreen() {
         </View>
 
         {/* Divider */}
-        <View style={{ height: 1, backgroundColor: "rgba(0,0,0,0.1)", marginVertical: 32 }} />
+        <View
+          style={{
+            height: 1,
+            backgroundColor: "rgba(0,0,0,0.1)",
+            marginVertical: 32,
+          }}
+        />
 
         {/* Security Section */}
         <View style={{ paddingHorizontal: 24 }}>
-          <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 16 }}>
+          <Text
+            style={{
+              fontSize: 14,
+              fontWeight: "500",
+              color: "#0a0a0a",
+              marginBottom: 16,
+            }}
+          >
             Security
           </Text>
           <View style={{ gap: 8 }}>
@@ -1273,8 +1513,19 @@ export default function SettingsScreen() {
                   paddingHorizontal: 12,
                 }}
               >
-                <Ionicons name="lock-closed-outline" size={16} color="#0a0a0a" />
-                <Text style={{ color: "#0a0a0a", fontSize: 14, fontWeight: "500", marginLeft: 12 }}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={16}
+                  color="#0a0a0a"
+                />
+                <Text
+                  style={{
+                    color: "#0a0a0a",
+                    fontSize: 14,
+                    fontWeight: "500",
+                    marginLeft: 12,
+                  }}
+                >
                   Set Up PIN
                 </Text>
               </TouchableOpacity>
@@ -1294,7 +1545,14 @@ export default function SettingsScreen() {
                   }}
                 >
                   <Ionicons name="key-outline" size={16} color="#0a0a0a" />
-                  <Text style={{ color: "#0a0a0a", fontSize: 14, fontWeight: "500", marginLeft: 12 }}>
+                  <Text
+                    style={{
+                      color: "#0a0a0a",
+                      fontSize: 14,
+                      fontWeight: "500",
+                      marginLeft: 12,
+                    }}
+                  >
                     Change PIN
                   </Text>
                 </TouchableOpacity>
@@ -1312,8 +1570,19 @@ export default function SettingsScreen() {
                     paddingHorizontal: 12,
                   }}
                 >
-                  <Ionicons name="lock-open-outline" size={16} color="#e7000b" />
-                  <Text style={{ color: "#e7000b", fontSize: 14, fontWeight: "500", marginLeft: 12 }}>
+                  <Ionicons
+                    name="lock-open-outline"
+                    size={16}
+                    color="#e7000b"
+                  />
+                  <Text
+                    style={{
+                      color: "#e7000b",
+                      fontSize: 14,
+                      fontWeight: "500",
+                      marginLeft: 12,
+                    }}
+                  >
                     Remove PIN
                   </Text>
                 </TouchableOpacity>
@@ -1323,11 +1592,24 @@ export default function SettingsScreen() {
         </View>
 
         {/* Divider */}
-        <View style={{ height: 1, backgroundColor: "rgba(0,0,0,0.1)", marginVertical: 32 }} />
+        <View
+          style={{
+            height: 1,
+            backgroundColor: "rgba(0,0,0,0.1)",
+            marginVertical: 32,
+          }}
+        />
 
         {/* Data Management Section */}
         <View style={{ paddingHorizontal: 24 }}>
-          <Text style={{ fontSize: 14, fontWeight: "500", color: "#0a0a0a", marginBottom: 16 }}>
+          <Text
+            style={{
+              fontSize: 14,
+              fontWeight: "500",
+              color: "#0a0a0a",
+              marginBottom: 16,
+            }}
+          >
             Data Management
           </Text>
           <View style={{ gap: 8 }}>
@@ -1347,13 +1629,15 @@ export default function SettingsScreen() {
               disabled={!hasToken || isWorking}
             >
               <Ionicons name="download-outline" size={16} color="#0a0a0a" />
-              <Text style={{ 
-                color: "#0a0a0a", 
-                fontSize: 14, 
-                fontWeight: "500", 
-                marginLeft: 12,
-                opacity: (!hasToken || isWorking) ? 0.5 : 1
-              }}>
+              <Text
+                style={{
+                  color: "#0a0a0a",
+                  fontSize: 14,
+                  fontWeight: "500",
+                  marginLeft: 12,
+                  opacity: !hasToken || isWorking ? 0.5 : 1,
+                }}
+              >
                 Export Vault
               </Text>
             </TouchableOpacity>
@@ -1374,13 +1658,15 @@ export default function SettingsScreen() {
               disabled={!hasToken || isWorking}
             >
               <Ionicons name="cloud-upload-outline" size={16} color="#0a0a0a" />
-              <Text style={{ 
-                color: "#0a0a0a", 
-                fontSize: 14, 
-                fontWeight: "500", 
-                marginLeft: 12,
-                opacity: (!hasToken || isWorking) ? 0.5 : 1
-              }}>
+              <Text
+                style={{
+                  color: "#0a0a0a",
+                  fontSize: 14,
+                  fontWeight: "500",
+                  marginLeft: 12,
+                  opacity: !hasToken || isWorking ? 0.5 : 1,
+                }}
+              >
                 Import Vault
               </Text>
             </TouchableOpacity>
@@ -1400,7 +1686,14 @@ export default function SettingsScreen() {
               }}
             >
               <Ionicons name="trash-outline" size={16} color="#e7000b" />
-              <Text style={{ color: "#e7000b", fontSize: 14, fontWeight: "500", marginLeft: 12 }}>
+              <Text
+                style={{
+                  color: "#e7000b",
+                  fontSize: 14,
+                  fontWeight: "500",
+                  marginLeft: 12,
+                }}
+              >
                 Clear All Data
               </Text>
             </TouchableOpacity>
@@ -1409,39 +1702,49 @@ export default function SettingsScreen() {
 
         {/* Footer with App Version */}
         <View style={{ alignItems: "center", marginTop: 32, marginBottom: 40 }}>
-          <View style={{
-            width: 48,
-            height: 48,
-            backgroundColor: "#000",
-            borderRadius: 16,
-            justifyContent: "center",
-            alignItems: "center",
-            marginBottom: 16,
-          }}>
+          <View
+            style={{
+              width: 48,
+              height: 48,
+              backgroundColor: "#000",
+              borderRadius: 16,
+              justifyContent: "center",
+              alignItems: "center",
+              marginBottom: 16,
+            }}
+          >
             <Ionicons name="shield-checkmark-outline" size={24} color="#fff" />
           </View>
           <Text style={{ fontSize: 12, color: "#99a1af", marginBottom: 4 }}>
             AuthFactory 2026
           </Text>
-          <Text style={{ fontSize: 12, color: "#99a1af" }}>
-            v1.0.0
-          </Text>
+          <Text style={{ fontSize: 12, color: "#99a1af" }}>v1.0.0</Text>
         </View>
 
         {/* Status Display */}
         {status && !status.includes("Validating") && (
-          <View style={{ 
-            marginHorizontal: 24,
-            marginBottom: 16,
-            padding: 12,
-            backgroundColor: status.includes("Failed") || status.includes("failed") ? "#fee2e2" : "#d1fae5",
-            borderRadius: 8,
-          }}>
-            <Text style={{ 
-              color: status.includes("Failed") || status.includes("failed") ? "#991b1b" : "#065f46",
-              fontSize: 13,
-              fontWeight: "500"
-            }}>
+          <View
+            style={{
+              marginHorizontal: 24,
+              marginBottom: 16,
+              padding: 12,
+              backgroundColor:
+                status.includes("Failed") || status.includes("failed")
+                  ? "#fee2e2"
+                  : "#d1fae5",
+              borderRadius: 8,
+            }}
+          >
+            <Text
+              style={{
+                color:
+                  status.includes("Failed") || status.includes("failed")
+                    ? "#991b1b"
+                    : "#065f46",
+                fontSize: 13,
+                fontWeight: "500",
+              }}
+            >
               {status}
             </Text>
           </View>
