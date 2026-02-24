@@ -22,8 +22,12 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
-  const [lockoutRemainingMs, setLockoutRemainingMs] = useState<number | null>(null);
-  const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null);
+  const [lockoutRemainingMs, setLockoutRemainingMs] = useState<number | null>(
+    null,
+  );
+  const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(
+    null,
+  );
 
   /*
    * LOCKOUT COUNTDOWN TIMER
@@ -169,7 +173,13 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
   return (
     <View style={{ flex: 1, backgroundColor: "#fff", paddingTop: insets.top }}>
       {/* Header */}
-      <View style={{ paddingHorizontal: 24, paddingVertical: 40, alignItems: "center" }}>
+      <View
+        style={{
+          paddingHorizontal: 24,
+          paddingVertical: 40,
+          alignItems: "center",
+        }}
+      >
         <View
           style={{
             width: 80,
@@ -184,7 +194,14 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
           <Ionicons name="lock-closed" size={40} color="#fff" />
         </View>
 
-        <Text style={{ fontSize: 28, fontWeight: "700", color: "#000", marginBottom: 8 }}>
+        <Text
+          style={{
+            fontSize: 28,
+            fontWeight: "700",
+            color: "#000",
+            marginBottom: 8,
+          }}
+        >
           Enter PIN
         </Text>
 
@@ -197,13 +214,35 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
       <View style={{ paddingVertical: 40 }}>{renderPinDots()}</View>
 
       {/* STATUS */}
-      <View style={{ paddingHorizontal: 24, minHeight: 60, justifyContent: "center" }}>
+      <View
+        style={{
+          paddingHorizontal: 24,
+          minHeight: 60,
+          justifyContent: "center",
+        }}
+      >
         {lockoutRemainingMs && (
-          <View style={{ backgroundColor: "#fee2e2", padding: 16, borderRadius: 8 }}>
-            <Text style={{ color: "#991b1b", fontSize: 14, textAlign: "center", fontWeight: "600" }}>
+          <View
+            style={{ backgroundColor: "#fee2e2", padding: 16, borderRadius: 8 }}
+          >
+            <Text
+              style={{
+                color: "#991b1b",
+                fontSize: 14,
+                textAlign: "center",
+                fontWeight: "600",
+              }}
+            >
               Locked out
             </Text>
-            <Text style={{ color: "#991b1b", fontSize: 13, textAlign: "center", marginTop: 4 }}>
+            <Text
+              style={{
+                color: "#991b1b",
+                fontSize: 13,
+                textAlign: "center",
+                marginTop: 4,
+              }}
+            >
               Try again in {formatRemaining()}
             </Text>
           </View>
@@ -211,12 +250,26 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
 
         {!lockoutRemainingMs && error !== "" && (
           <View>
-            <Text style={{ color: "#e7000b", fontSize: 14, textAlign: "center", fontWeight: "500" }}>
+            <Text
+              style={{
+                color: "#e7000b",
+                fontSize: 14,
+                textAlign: "center",
+                fontWeight: "500",
+              }}
+            >
               {error}
             </Text>
 
             {attemptsRemaining !== null && (
-              <Text style={{ color: "#6a7282", fontSize: 13, textAlign: "center", marginTop: 4 }}>
+              <Text
+                style={{
+                  color: "#6a7282",
+                  fontSize: 13,
+                  textAlign: "center",
+                  marginTop: 4,
+                }}
+              >
                 {attemptsRemaining} remaining
               </Text>
             )}
@@ -231,7 +284,9 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
       </View>
 
       {/* NUMBER PAD */}
-      <View style={{ flex: 1, paddingHorizontal: 24, justifyContent: "center" }}>
+      <View
+        style={{ flex: 1, paddingHorizontal: 24, justifyContent: "center" }}
+      >
         <View style={{ gap: 16 }}>
           {[
             ["1", "2", "3"],
@@ -241,7 +296,8 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
           ].map((row, rowIndex) => (
             <View key={rowIndex} style={{ flexDirection: "row", gap: 16 }}>
               {row.map((key, colIndex) => {
-                if (key === "") return <View key={colIndex} style={{ flex: 1 }} />;
+                if (key === "")
+                  return <View key={colIndex} style={{ flex: 1 }} />;
 
                 if (key === "delete") {
                   return (
@@ -277,7 +333,9 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
                       alignItems: "center",
                     }}
                   >
-                    <Text style={{ fontSize: 28, fontWeight: "600" }}>{key}</Text>
+                    <Text style={{ fontSize: 28, fontWeight: "600" }}>
+                      {key}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}

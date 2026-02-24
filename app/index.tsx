@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
+  Image,
   Pressable,
   Text,
   TouchableOpacity,
@@ -50,10 +51,8 @@ export default function Index() {
 
     (async () => {
       try {
-        const {
-          onSyncStateChange,
-          isSyncing: getCurrentSyncState,
-        } = await import("./utils/backupUtils");
+        const { onSyncStateChange, isSyncing: getCurrentSyncState } =
+          await import("./utils/backupUtils");
 
         setIsSyncing(getCurrentSyncState());
 
@@ -82,7 +81,7 @@ export default function Index() {
         keys.map(async (key: string) => {
           const accountData = await Storage.getItemAsync(key);
           return { key, data: accountData ? JSON.parse(accountData) : null };
-        })
+        }),
       );
 
       setAccounts(userAccounts);
@@ -97,7 +96,7 @@ export default function Index() {
   useFocusEffect(
     useCallback(() => {
       loadAccounts();
-    }, [loadAccounts])
+    }, [loadAccounts]),
   );
 
   /**
@@ -118,7 +117,7 @@ export default function Index() {
       const updatedKeys = accountKeys.filter((k) => k !== key);
       await Storage.setItemAsync(
         "userAccountKeys",
-        JSON.stringify(updatedKeys)
+        JSON.stringify(updatedKeys),
       );
 
       setAccountKeys(updatedKeys);
@@ -141,7 +140,7 @@ export default function Index() {
 
       await Storage.setItemAsync(key, JSON.stringify(updated));
       setAccounts((prev) =>
-        prev.map((acc) => (acc.key === key ? { ...acc, data: updated } : acc))
+        prev.map((acc) => (acc.key === key ? { ...acc, data: updated } : acc)),
       );
     } catch (err) {
       console.error("Error editing account:", err);
@@ -161,14 +160,24 @@ export default function Index() {
           paddingHorizontal: 20,
         }}
       >
-        <Text style={{ fontSize: 20, fontWeight: "600" }}>
-          AuthFactory
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Image
+            source={require("../assets/images/invert-icon.png")}
+            style={{ width: 26, height: 26, borderRadius: 8 }}
+          />
+          <Text
+            style={{
+              marginLeft: 5,
+              fontSize: 20,
+              fontWeight: "600",
+              color: "#000",
+            }}
+          >
+            AuthFactory
+          </Text>
+        </View>
 
-        <Pressable
-          onPress={() => router.push("/settings")}
-          hitSlop={12}
-        >
+        <Pressable onPress={() => router.push("/settings")} hitSlop={12}>
           <Ionicons name="settings-outline" size={24} color="#000" />
         </Pressable>
       </View>
@@ -216,10 +225,10 @@ export default function Index() {
             onEdit={editAccount}
           />
         ) : (
-          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <Text style={{ fontSize: 16, color: "#666" }}>
-              No accounts yet
-            </Text>
+          <View
+            style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+          >
+            <Text style={{ fontSize: 16, color: "#666" }}>No accounts yet</Text>
           </View>
         )}
 
