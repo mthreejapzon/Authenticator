@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AccountList from "./components/AccountList";
+import { useTheme } from "./context/ThemeContext";
 import { Storage } from "./utils/storage";
 
 export default function Index() {
@@ -33,6 +34,7 @@ export default function Index() {
     }[]
   >([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const { themeMode, setThemeMode, colors } = useTheme();
 
   /**
    * 🔥 Disable native iOS / Android header completely
@@ -148,7 +150,7 @@ export default function Index() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#f8f9fa" }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* 🔥 Custom Header */}
       <View
         style={{
@@ -162,7 +164,11 @@ export default function Index() {
       >
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <Image
-            source={require("../assets/images/invert-icon.png")}
+            source={
+              themeMode === "dark"
+                ? require("../assets/images/appstore.png")
+                : require("../assets/images/invert-icon.png")
+            }
             style={{ width: 26, height: 26, borderRadius: 8 }}
           />
           <Text
@@ -170,7 +176,7 @@ export default function Index() {
               marginLeft: 5,
               fontSize: 20,
               fontWeight: "600",
-              color: "#000",
+              color: colors.text,
             }}
           >
             AuthFactory
@@ -178,7 +184,7 @@ export default function Index() {
         </View>
 
         <Pressable onPress={() => router.push("/settings")} hitSlop={12}>
-          <Ionicons name="settings-outline" size={24} color="#000" />
+          <Ionicons name="settings-outline" size={24} color={colors.text} />
         </Pressable>
       </View>
 
@@ -196,19 +202,19 @@ export default function Index() {
             style={{
               flexDirection: "row",
               alignItems: "center",
-              backgroundColor: "#e3f2fd",
+              backgroundColor: colors.background,
               padding: 12,
               borderRadius: 10,
               marginBottom: 16,
               borderLeftWidth: 4,
-              borderLeftColor: "#2196F3",
+              borderLeftColor: colors.border,
             }}
           >
-            <ActivityIndicator size="small" color="#1976D2" />
+            <ActivityIndicator size="small" color={colors.text} />
             <Text
               style={{
                 marginLeft: 10,
-                color: "#1565C0",
+                color: colors.text,
                 fontSize: 14,
                 fontWeight: "500",
               }}
@@ -228,14 +234,16 @@ export default function Index() {
           <View
             style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
           >
-            <Text style={{ fontSize: 16, color: "#666" }}>No accounts yet</Text>
+            <Text style={{ fontSize: 16, color: colors.text }}>
+              No accounts yet
+            </Text>
           </View>
         )}
 
         <Link href="/setup" asChild>
           <TouchableOpacity
             style={{
-              backgroundColor: "#000",
+              backgroundColor: colors.background,
               paddingVertical: 14,
               borderRadius: 12,
               marginTop: 20,
@@ -243,7 +251,9 @@ export default function Index() {
             }}
             activeOpacity={0.8}
           >
-            <Text style={{ color: "white", fontSize: 16, fontWeight: "500" }}>
+            <Text
+              style={{ color: colors.text, fontSize: 16, fontWeight: "500" }}
+            >
               + Add Account
             </Text>
           </TouchableOpacity>

@@ -6,9 +6,10 @@ import {
   Platform,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTheme } from "../context/ThemeContext";
 
 interface PinSetupScreenProps {
   onPinSetup: () => void;
@@ -17,14 +18,20 @@ interface PinSetupScreenProps {
 
 const PIN_LENGTH = 6;
 
-export default function PinSetupScreen({ onPinSetup, onSkip }: PinSetupScreenProps) {
+export default function PinSetupScreen({
+  onPinSetup,
+  onSkip,
+}: PinSetupScreenProps) {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
 
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [step, setStep] = useState<"enter" | "confirm">("enter");
   const [error, setError] = useState("");
   const [isWorking, setIsWorking] = useState(false);
+
+  /* ---------------- PIN INPUT ---------------- */
 
   const handlePinInput = (digit: string) => {
     if (step === "enter") {
@@ -48,6 +55,8 @@ export default function PinSetupScreen({ onPinSetup, onSkip }: PinSetupScreenPro
     }
     setError("");
   };
+
+  /* ---------------- CONTINUE ---------------- */
 
   const handleContinue = async () => {
     if (step === "enter") {
@@ -99,30 +108,39 @@ export default function PinSetupScreen({ onPinSetup, onSkip }: PinSetupScreenPro
     }
   };
 
-  const renderPinDots = (value: string) => {
-    return (
-      <View style={{ flexDirection: "row", gap: 12, justifyContent: "center" }}>
-        {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-          <View
-            key={i}
-            style={{
-              width: 14,
-              height: 14,
-              borderRadius: 7,
-              backgroundColor: i < value.length ? "#000" : "#e5e7eb",
-            }}
-          />
-        ))}
-      </View>
-    );
-  };
+  /* ---------------- PIN DOTS ---------------- */
+
+  const renderPinDots = (value: string) => (
+    <View style={{ flexDirection: "row", gap: 12, justifyContent: "center" }}>
+      {Array.from({ length: PIN_LENGTH }).map((_, i) => (
+        <View
+          key={i}
+          style={{
+            width: 14,
+            height: 14,
+            borderRadius: 7,
+            backgroundColor: i < value.length ? colors.primary : colors.border,
+          }}
+        />
+      ))}
+    </View>
+  );
 
   const isEnterValid = pin.length === PIN_LENGTH;
   const isConfirmValid = confirmPin.length === PIN_LENGTH;
+  const isButtonEnabled = step === "enter" ? isEnterValid : isConfirmValid;
+
+  /* ---------------- UI ---------------- */
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#fff", paddingTop: insets.top }}>
-      {/* Header */}
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: colors.background,
+        paddingTop: insets.top,
+      }}
+    >
+      {/* HEADER */}
       <View style={{ paddingHorizontal: 24, paddingVertical: 20 }}>
         {step === "confirm" && (
           <TouchableOpacity
@@ -133,37 +151,58 @@ export default function PinSetupScreen({ onPinSetup, onSkip }: PinSetupScreenPro
             }}
             style={{ alignSelf: "flex-start", marginBottom: 20 }}
           >
-            <Ionicons name="arrow-back" size={24} color="#000" />
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
         )}
 
-        <Text style={{ fontSize: 28, fontWeight: "700", color: "#000", marginBottom: 8 }}>
+        <Text
+          style={{
+            fontSize: 28,
+            fontWeight: "700",
+            color: colors.text,
+            marginBottom: 8,
+          }}
+        >
           {step === "enter" ? "Create Security PIN" : "Confirm Your PIN"}
         </Text>
 
-        <Text style={{ fontSize: 16, color: "#6a7282", lineHeight: 24 }}>
+        <Text
+          style={{
+            fontSize: 16,
+            color: colors.subText,
+            lineHeight: 24,
+          }}
+        >
           {step === "enter"
             ? "Set a 6-digit PIN to protect your authenticator codes"
             : "Enter your 6-digit PIN again to confirm"}
         </Text>
       </View>
 
-      {/* PIN Dots */}
+      {/* PIN DOTS */}
       <View style={{ paddingVertical: 40 }}>
         {renderPinDots(step === "enter" ? pin : confirmPin)}
       </View>
 
-      {/* Error */}
+      {/* ERROR */}
       {error && (
         <View style={{ paddingHorizontal: 24, marginBottom: 20 }}>
-          <Text style={{ color: "#e7000b", fontSize: 14, textAlign: "center" }}>
+          <Text
+            style={{
+              color: colors.danger,
+              fontSize: 14,
+              textAlign: "center",
+            }}
+          >
             {error}
           </Text>
         </View>
       )}
 
-      {/* Number Pad */}
-      <View style={{ flex: 1, paddingHorizontal: 24, justifyContent: "center" }}>
+      {/* NUMBER PAD */}
+      <View
+        style={{ flex: 1, paddingHorizontal: 24, justifyContent: "center" }}
+      >
         <View style={{ gap: 16 }}>
           {[
             ["1", "2", "3"],
@@ -173,7 +212,8 @@ export default function PinSetupScreen({ onPinSetup, onSkip }: PinSetupScreenPro
           ].map((row, rowIndex) => (
             <View key={rowIndex} style={{ flexDirection: "row", gap: 16 }}>
               {row.map((key, colIndex) => {
-                if (key === "") return <View key={colIndex} style={{ flex: 1 }} />;
+                if (key === "")
+                  return <View key={colIndex} style={{ flex: 1 }} />;
 
                 if (key === "delete") {
                   return (
@@ -184,12 +224,16 @@ export default function PinSetupScreen({ onPinSetup, onSkip }: PinSetupScreenPro
                         flex: 1,
                         height: 72,
                         borderRadius: 12,
-                        backgroundColor: "#f9fafb",
+                        backgroundColor: colors.card,
                         justifyContent: "center",
                         alignItems: "center",
                       }}
                     >
-                      <Ionicons name="backspace-outline" size={28} color="#000" />
+                      <Ionicons
+                        name="backspace-outline"
+                        size={28}
+                        color={colors.text}
+                      />
                     </TouchableOpacity>
                   );
                 }
@@ -202,12 +246,18 @@ export default function PinSetupScreen({ onPinSetup, onSkip }: PinSetupScreenPro
                       flex: 1,
                       height: 72,
                       borderRadius: 12,
-                      backgroundColor: "#f9fafb",
+                      backgroundColor: colors.card,
                       justifyContent: "center",
                       alignItems: "center",
                     }}
                   >
-                    <Text style={{ fontSize: 28, fontWeight: "600", color: "#000" }}>
+                    <Text
+                      style={{
+                        fontSize: 28,
+                        fontWeight: "600",
+                        color: colors.text,
+                      }}
+                    >
                       {key}
                     </Text>
                   </TouchableOpacity>
@@ -218,20 +268,13 @@ export default function PinSetupScreen({ onPinSetup, onSkip }: PinSetupScreenPro
         </View>
       </View>
 
-      {/* Continue */}
+      {/* CONTINUE BUTTON */}
       <View style={{ padding: 24, gap: 12 }}>
         <TouchableOpacity
           onPress={handleContinue}
-          disabled={isWorking || (step === "enter" ? !isEnterValid : !isConfirmValid)}
+          disabled={isWorking || !isButtonEnabled}
           style={{
-            backgroundColor:
-              step === "enter"
-                ? isEnterValid
-                  ? "#000"
-                  : "#e5e7eb"
-                : isConfirmValid
-                ? "#000"
-                : "#e5e7eb",
+            backgroundColor: isButtonEnabled ? colors.primary : colors.border,
             height: 52,
             borderRadius: 12,
             justifyContent: "center",
@@ -239,20 +282,13 @@ export default function PinSetupScreen({ onPinSetup, onSkip }: PinSetupScreenPro
           }}
         >
           {isWorking ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.background} />
           ) : (
             <Text
               style={{
                 fontSize: 16,
                 fontWeight: "600",
-                color:
-                  step === "enter"
-                    ? isEnterValid
-                      ? "#fff"
-                      : "#9ca3af"
-                    : isConfirmValid
-                    ? "#fff"
-                    : "#9ca3af",
+                color: isButtonEnabled ? colors.background : colors.subText,
               }}
             >
               {step === "enter" ? "Continue" : "Confirm PIN"}
@@ -269,7 +305,14 @@ export default function PinSetupScreen({ onPinSetup, onSkip }: PinSetupScreenPro
               alignItems: "center",
             }}
           >
-            <Text style={{ fontSize: 16, color: "#6a7282" }}>Skip for now</Text>
+            <Text
+              style={{
+                fontSize: 16,
+                color: colors.subText,
+              }}
+            >
+              Skip for now
+            </Text>
           </TouchableOpacity>
         )}
       </View>

@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { RelativePathString, useNavigation, useRouter } from "expo-router";
 import * as OTPAuth from "otpauth";
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import type { TextStyle } from "react-native";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -13,10 +14,11 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { FormFields } from "../context/FormContext";
+import { useTheme } from "../context/ThemeContext";
 import { decryptText } from "../utils/crypto";
 import { Storage } from "../utils/storage";
 
@@ -31,6 +33,7 @@ export default function AccountForm({
   notes,
   setFormData,
   resetForm,
+  referer,
 }: {
   accountKey?: string;
   accountName: string;
@@ -42,19 +45,20 @@ export default function AccountForm({
   notes: string;
   setFormData: (data: Partial<FormFields>) => void;
   resetForm: () => void;
+  referer?: RelativePathString;
 }) {
   const router = useRouter();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
 
+  const { themeMode, setThemeMode, colors } = useTheme();
+  const styles = createStyles(colors);
   const [isSaving, setIsSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [hasToken, setHasToken] = useState(false);
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(
-    !!secretKey?.trim()
-  );
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(!!secretKey?.trim());
 
   /**
    * 🔒 Disable native navigation bar completely
@@ -146,9 +150,7 @@ export default function AccountForm({
       }
 
       const now = new Date().toISOString();
-      const stored = accountKey
-        ? await Storage.getItemAsync(accountKey)
-        : null;
+      const stored = accountKey ? await Storage.getItemAsync(accountKey) : null;
 
       const existing = stored ? JSON.parse(stored) : {};
 
@@ -169,13 +171,14 @@ export default function AccountForm({
 
       if (!accountKey) {
         const keys = JSON.parse(
-          (await Storage.getItemAsync("userAccountKeys")) || "[]"
+          (await Storage.getItemAsync("userAccountKeys")) || "[]",
         );
         if (!keys.includes(key)) keys.push(key);
         await Storage.setItemAsync("userAccountKeys", JSON.stringify(keys));
       }
 
-      router.replace(`/details/${key}` as RelativePathString);
+      const target = referer ?? (`/details/${key}` as RelativePathString);
+      router.replace(target);
     } catch (err) {
       Alert.alert("Error", "Failed to save account");
       console.error(err);
@@ -191,6 +194,7 @@ export default function AccountForm({
     notes,
     accountKey,
     twoFactorEnabled,
+    referer,
   ]);
 
   const handleChange = (field: keyof FormFields, value: string) => {
@@ -209,7 +213,7 @@ export default function AccountForm({
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: "#fff" }}
+      style={{ flex: 1, backgroundColor: colors.background }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       {/* 🔥 Custom Header */}
@@ -222,14 +226,14 @@ export default function AccountForm({
           justifyContent: "space-between",
           paddingHorizontal: 16,
           borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: "#e5e7eb",
+          borderBottomColor: colors.border,
         }}
       >
         <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={20} color="#000" />
+          <Ionicons name="arrow-back" size={20} color={colors.text} />
         </Pressable>
 
-        <Text style={{ fontSize: 17, fontWeight: "600" }}>
+        <Text style={{ fontSize: 17, fontWeight: "600", color: colors.text }}>
           {accountKey ? "Edit Account" : "Add New Account"}
         </Text>
 
@@ -239,12 +243,12 @@ export default function AccountForm({
           style={{
             paddingHorizontal: 12,
             paddingVertical: 6,
-            backgroundColor: "#000",
+            backgroundColor: colors.background,
             borderRadius: 8,
             opacity: isSaving ? 0.5 : 1,
           }}
         >
-          <Text style={{ color: "#fff", fontWeight: "600", fontSize: 15 }}>
+          <Text style={{ color: colors.text, fontWeight: "600", fontSize: 15 }}>
             {isSaving ? "Saving…" : "Save"}
           </Text>
         </Pressable>
@@ -260,7 +264,7 @@ export default function AccountForm({
           </View>
         )}
 
-        <Field label="Title">
+        <Field label="Title" labelStyle={{ color: colors.text }}>
           <TextInput
             value={accountName}
             onChangeText={(t) => handleChange("accountName", t)}
@@ -268,7 +272,7 @@ export default function AccountForm({
           />
         </Field>
 
-        <Field label="Username or Email">
+        <Field label="Username or Email" labelStyle={{ color: colors.text }}>
           <TextInput
             value={username}
             onChangeText={(t) => handleChange("username", t)}
@@ -277,7 +281,7 @@ export default function AccountForm({
           />
         </Field>
 
-        <Field label="Password">
+        <Field label="Password" labelStyle={{ color: colors.text }}>
           <View style={styles.inputRow}>
             <TextInput
               value={password}
@@ -289,12 +293,13 @@ export default function AccountForm({
               <Ionicons
                 name={showPassword ? "eye-off-outline" : "eye-outline"}
                 size={20}
+                color={colors.text}
               />
             </Pressable>
           </View>
         </Field>
 
-        <Field label="Website URL">
+        <Field label="Website URL" labelStyle={{ color: colors.text }}>
           <TextInput
             value={websiteUrl}
             onChangeText={(t) => handleChange("websiteUrl", t)}
@@ -304,7 +309,7 @@ export default function AccountForm({
           />
         </Field>
 
-        <Field label="Notes">
+        <Field label="Notes" labelStyle={{ color: colors.text }}>
           <TextInput
             value={notes}
             onChangeText={(t) => handleChange("notes", t)}
@@ -320,7 +325,11 @@ export default function AccountForm({
           <View style={styles.twoFactorHeader}>
             <View style={styles.twoFactorTitleRow}>
               <View style={styles.twoFactorIconWrapper}>
-                <Ionicons name="lock-closed-outline" size={20} color="#1d4ed8" />
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={20}
+                  color={colors.text}
+                />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.twoFactorTitle}>
@@ -373,14 +382,15 @@ export default function AccountForm({
                 <Ionicons
                   name="qr-code-outline"
                   size={18}
-                  color="#0a0a0a"
+                  color={colors.text}
                   style={{ marginRight: 8 }}
                 />
                 <Text style={styles.scanQrText}>Scan QR Code</Text>
               </TouchableOpacity>
 
               <Text style={styles.helperText}>
-                Scan the QR code or manually enter the secret key from your 2FA setup
+                Scan the QR code or manually enter the secret key from your 2FA
+                setup
               </Text>
             </View>
           )}
@@ -395,13 +405,17 @@ export default function AccountForm({
 function Field({
   label,
   children,
+  labelStyle,
 }: {
   label: string;
   children: React.ReactNode;
+  labelStyle?: TextStyle;
 }) {
   return (
     <View style={{ marginBottom: 14 }}>
-      <Text style={{ fontWeight: "600", marginBottom: 6 }}>{label}</Text>
+      <Text style={[{ fontWeight: "600", marginBottom: 6 }, labelStyle]}>
+        {label}
+      </Text>
       {children}
     </View>
   );
@@ -409,136 +423,138 @@ function Field({
 
 /* ---------- Styles ---------- */
 
-const styles = StyleSheet.create({
-  form: {
-    padding: 24,
-    paddingBottom: 40,
-  },
-  input: {
-    height: 48,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    paddingHorizontal: 12,
-    backgroundColor: "#f9f9f9",
-  },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    backgroundColor: "#f9f9f9",
-  },
-  textField: {
-    flex: 1,
-    height: 48,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#e5e7eb",
-    marginVertical: 24,
-  },
-  warning: {
-    backgroundColor: "#fff3cd",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  warningText: {
-    fontSize: 13,
-    color: "#856404",
-  },
-  // Two-Factor Authentication styles
-  twoFactorCard: {
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 12,
-    backgroundColor: "#ffffff",
-  },
-  twoFactorHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 16,
-  },
-  twoFactorTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    gap: 12,
-  },
-  twoFactorIconWrapper: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#dbeafe",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  twoFactorTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#0a0a0a",
-  },
-  twoFactorSubtitle: {
-    fontSize: 13,
-    color: "#6b7280",
-    marginTop: 2,
-  },
-  twoFactorBody: {
-    padding: 16,
-    paddingTop: 0,
-    gap: 12,
-  },
-  fieldWrapper: {
-    gap: 8,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#374151",
-  },
-  otpInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    backgroundColor: "#f9fafb",
-  },
-  toggleButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  toggleText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1d4ed8",
-  },
-  scanQrButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: "#f3f4f6",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-  },
-  scanQrText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#0a0a0a",
-  },
-  helperText: {
-    fontSize: 13,
-    color: "#6b7280",
-    lineHeight: 18,
-  },
-});
+const createStyles = (colors: any) =>
+  StyleSheet.create({
+    form: {
+      padding: 24,
+      paddingBottom: 40,
+    },
+    input: {
+      height: 48,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 12,
+      backgroundColor: colors.card,
+      color: colors.text,
+    },
+    inputRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      backgroundColor: colors.card,
+    },
+    textField: {
+      flex: 1,
+      height: 48,
+    },
+    divider: {
+      height: 1,
+      backgroundColor: colors.border,
+      marginVertical: 24,
+    },
+    warning: {
+      backgroundColor: colors.card,
+      padding: 12,
+      borderRadius: 8,
+      marginBottom: 16,
+    },
+    warningText: {
+      fontSize: 13,
+      color: colors.danger,
+    },
+    // Two-Factor Authentication styles
+    twoFactorCard: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      backgroundColor: colors.background,
+    },
+    twoFactorHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: 16,
+    },
+    twoFactorTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+      gap: 12,
+    },
+    twoFactorIconWrapper: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.card,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    twoFactorTitle: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    twoFactorSubtitle: {
+      fontSize: 13,
+      color: colors.subText,
+      marginTop: 2,
+    },
+    twoFactorBody: {
+      padding: 16,
+      paddingTop: 0,
+      gap: 12,
+    },
+    fieldWrapper: {
+      gap: 8,
+    },
+    label: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    otpInputContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      backgroundColor: colors.card,
+    },
+    toggleButton: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+    },
+    toggleText: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.primary,
+    },
+    scanQrButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      backgroundColor: colors.card,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    scanQrText: {
+      fontSize: 15,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    helperText: {
+      fontSize: 13,
+      color: colors.subText,
+      lineHeight: 18,
+    },
+  });

@@ -1,5 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
-import { RelativePathString, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import {
+  RelativePathString,
+  useLocalSearchParams,
+  useNavigation,
+  useRouter,
+} from "expo-router";
 import * as OTPAuth from "otpauth";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -11,13 +16,14 @@ import {
   ScrollView,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import * as icons from "simple-icons";
 import AccountForm from "../components/AccountForm";
 import { useForm } from "../context/FormContext";
+import { useTheme } from "../context/ThemeContext";
 import { decryptText } from "../utils/crypto";
 import { Clipboard, Storage } from "../utils/storage";
 
@@ -58,6 +64,7 @@ export default function DetailsScreen() {
   const [notesText, setNotesText] = useState<string>("");
   const [decryptionError, setDecryptionError] = useState<string | null>(null);
   const [isFavorite, setIsFavorite] = useState<boolean>(false);
+  const { colors } = useTheme();
 
   const progress = useRef(new Animated.Value(1)).current;
   const highlightAnim = useRef(new Animated.Value(0)).current;
@@ -108,21 +115,22 @@ export default function DetailsScreen() {
 
         // Get GitHub token for decryption
         const pat = await Storage.getItemAsync("github_token");
-        
+
         // Validate PAT more thoroughly
         if (!pat || pat.trim().length === 0) {
           console.warn("⚠️ Missing GitHub token");
           setDecryptionError("GitHub token not configured");
-          
+
           // Show data without decryption
           setData(parsed);
           setFormData(parsed);
           setNotesText(parsed.notes || "");
           setDecryptedPassword("");
-          
+
           // Show alert to user
-          const message = "GitHub token not found. Please add your GitHub token in Settings to decrypt passwords and OTP codes.";
-          if (Platform.OS === 'web') {
+          const message =
+            "GitHub token not found. Please add your GitHub token in Settings to decrypt passwords and OTP codes.";
+          if (Platform.OS === "web") {
             window.alert(message);
           } else {
             Alert.alert("Token Required", message);
@@ -146,7 +154,9 @@ export default function DetailsScreen() {
             } catch (e) {
               console.error("❌ Password decrypt failed:", e);
               hasDecryptionError = true;
-              setDecryptionError("Failed to decrypt password. Check your GitHub token in Settings.");
+              setDecryptionError(
+                "Failed to decrypt password. Check your GitHub token in Settings.",
+              );
               decryptedPw = "";
             }
           }
@@ -159,7 +169,9 @@ export default function DetailsScreen() {
             } catch (e) {
               console.error("❌ OTP decrypt failed:", e);
               hasDecryptionError = true;
-              setDecryptionError("Failed to decrypt OTP secret. Check your GitHub token in Settings.");
+              setDecryptionError(
+                "Failed to decrypt OTP secret. Check your GitHub token in Settings.",
+              );
               decryptedOtpValue = "";
             }
           }
@@ -176,8 +188,9 @@ export default function DetailsScreen() {
 
         // Show error alert if decryption failed
         if (hasDecryptionError) {
-          const message = "Decryption failed. This usually means:\n\n1. Your GitHub token is incorrect\n2. The data was encrypted with a different token\n3. The backup data is corrupted\n\nPlease verify your GitHub token in Settings.";
-          if (Platform.OS === 'web') {
+          const message =
+            "Decryption failed. This usually means:\n\n1. Your GitHub token is incorrect\n2. The data was encrypted with a different token\n3. The backup data is corrupted\n\nPlease verify your GitHub token in Settings.";
+          if (Platform.OS === "web") {
             window.alert(message);
           } else {
             Alert.alert("Decryption Error", message);
@@ -205,20 +218,20 @@ export default function DetailsScreen() {
         if (decryptedOtpValue) {
           try {
             let otpDetails;
-            
+
             // Check if it's a valid OTP URI or just a secret
-            if (decryptedOtpValue.startsWith('otpauth://')) {
+            if (decryptedOtpValue.startsWith("otpauth://")) {
               // It's a full OTP URI
               otpDetails = OTPAuth.URI.parse(decryptedOtpValue);
             } else {
               // It's just a secret key, create a TOTP object manually
               otpDetails = new OTPAuth.TOTP({
-                issuer: parsed.accountName || 'Account',
-                label: parsed.username || 'User',
-                algorithm: 'SHA1',
+                issuer: parsed.accountName || "Account",
+                label: parsed.username || "User",
+                algorithm: "SHA1",
                 digits: 6,
                 period: 30,
-                secret: decryptedOtpValue.replace(/\s+/g, ''), // Remove any whitespace
+                secret: decryptedOtpValue.replace(/\s+/g, ""), // Remove any whitespace
               });
             }
 
@@ -239,7 +252,8 @@ export default function DetailsScreen() {
               updateOtp();
 
               navigation.setOptions({
-                headerTitle: parsed.accountName || totp.issuer || "Account Details",
+                headerTitle:
+                  parsed.accountName || totp.issuer || "Account Details",
               });
 
               const interval = setInterval(updateOtp, 1000);
@@ -249,13 +263,16 @@ export default function DetailsScreen() {
               setOtpPeriod(0);
               setOtpCode(hotp.generate());
               navigation.setOptions({
-                headerTitle: parsed.accountName || hotp.issuer || "Account Details",
+                headerTitle:
+                  parsed.accountName || hotp.issuer || "Account Details",
               });
             }
           } catch (err) {
             console.error("❌ Invalid OTP configuration:", err);
             setOtpCode("Invalid OTP");
-            setDecryptionError("Invalid OTP configuration. The secret key format may be incorrect.");
+            setDecryptionError(
+              "Invalid OTP configuration. The secret key format may be incorrect.",
+            );
           }
         } else {
           // No OTP secret available
@@ -263,8 +280,8 @@ export default function DetailsScreen() {
         }
       } catch (err) {
         console.error("❌ Error loading account details:", err);
-        const message = `Failed to load account: ${err instanceof Error ? err.message : 'Unknown error'}`;
-        if (Platform.OS === 'web') {
+        const message = `Failed to load account: ${err instanceof Error ? err.message : "Unknown error"}`;
+        if (Platform.OS === "web") {
           window.alert(message);
         } else {
           Alert.alert("Error", message);
@@ -277,10 +294,10 @@ export default function DetailsScreen() {
   // Toggle favorite
   const toggleFavorite = async () => {
     if (!key || !data) return;
-    
+
     const newFavoriteStatus = !isFavorite;
     setIsFavorite(newFavoriteStatus);
-    
+
     try {
       const storedData = await Storage.getItemAsync(key as string);
       if (storedData) {
@@ -288,7 +305,11 @@ export default function DetailsScreen() {
         parsed.isFavorite = newFavoriteStatus;
         parsed.modifiedAt = new Date().toISOString();
         await Storage.setItemAsync(key as string, JSON.stringify(parsed));
-        setData({ ...data, isFavorite: newFavoriteStatus, modifiedAt: parsed.modifiedAt });
+        setData({
+          ...data,
+          isFavorite: newFavoriteStatus,
+          modifiedAt: parsed.modifiedAt,
+        });
       }
     } catch (err) {
       console.error("Error toggling favorite:", err);
@@ -313,11 +334,14 @@ export default function DetailsScreen() {
               const storedKeys = await Storage.getItemAsync("userAccountKeys");
               const keys = storedKeys ? JSON.parse(storedKeys) : [];
               const updatedKeys = keys.filter((k: string) => k !== key);
-              await Storage.setItemAsync("userAccountKeys", JSON.stringify(updatedKeys));
-              
+              await Storage.setItemAsync(
+                "userAccountKeys",
+                JSON.stringify(updatedKeys),
+              );
+
               // Delete account data
               await Storage.deleteItemAsync(key as string);
-              
+
               router.replace("/");
             } catch (err) {
               console.error("Error deleting account:", err);
@@ -325,7 +349,7 @@ export default function DetailsScreen() {
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -340,7 +364,11 @@ export default function DetailsScreen() {
     if (!dateString) return "";
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+      return date.toLocaleDateString("en-US", {
+        month: "numeric",
+        day: "numeric",
+        year: "numeric",
+      });
     } catch {
       return "";
     }
@@ -398,12 +426,12 @@ export default function DetailsScreen() {
   });
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#fff" }}>
+    <View style={{ flex: 1, backgroundColor: colors.cardSecondary }}>
       {/* Custom Header */}
       <View
         style={{
           borderBottomWidth: 0.613,
-          borderBottomColor: "#e5e7eb",
+          borderBottomColor: colors.border,
           paddingTop: insets.top,
           minHeight: 72.591,
           flexDirection: "row",
@@ -425,7 +453,7 @@ export default function DetailsScreen() {
             borderRadius: 8,
           }}
         >
-          <Ionicons name="arrow-back" size={20} color="#000" />
+          <Ionicons name="arrow-back" size={20} color={colors.text} />
         </TouchableOpacity>
 
         {/* Action Buttons */}
@@ -445,7 +473,7 @@ export default function DetailsScreen() {
             <Ionicons
               name={isFavorite ? "star" : "star-outline"}
               size={20}
-              color={isFavorite ? "#FFC107" : "#000"}
+              color={isFavorite ? "#FFC107" : colors.text}
             />
           </TouchableOpacity>
 
@@ -461,7 +489,7 @@ export default function DetailsScreen() {
               borderRadius: 8,
             }}
           >
-            <Ionicons name="pencil-outline" size={20} color="#000" />
+            <Ionicons name="pencil-outline" size={20} color={colors.text} />
           </TouchableOpacity>
 
           {/* Delete Button */}
@@ -476,7 +504,7 @@ export default function DetailsScreen() {
               borderRadius: 8,
             }}
           >
-            <Ionicons name="trash-outline" size={20} color="#EF4444" />
+            <Ionicons name="trash-outline" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -489,12 +517,12 @@ export default function DetailsScreen() {
         {decryptionError && (
           <View
             style={{
-              backgroundColor: "#fff3cd",
+              backgroundColor: colors.cardSecondary,
               borderRadius: 8,
               padding: 12,
               margin: 16,
               borderLeftWidth: 4,
-              borderLeftColor: "#ff9800",
+              borderLeftColor: colors.border,
             }}
           >
             <Text style={{ color: "#856404", fontWeight: "600", fontSize: 14 }}>
@@ -508,7 +536,7 @@ export default function DetailsScreen() {
           <View
             style={{
               borderBottomWidth: 0.613,
-              borderBottomColor: "#e5e7eb",
+              borderBottomColor: colors.border,
               paddingBottom: 16,
               flexDirection: "row",
               gap: 16,
@@ -521,14 +549,16 @@ export default function DetailsScreen() {
                 width: 76,
                 height: 76,
                 borderRadius: 16,
-                backgroundColor: "#f3f4f6",
+                backgroundColor: colors.background,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
               {(() => {
                 const providerName = data?.accountName || "";
-                const formatted = providerName.toLowerCase().replace(/\s+/g, "");
+                const formatted = providerName
+                  .toLowerCase()
+                  .replace(/\s+/g, "");
                 const iconKey = `si${formatted.charAt(0).toUpperCase()}${formatted.slice(1)}`;
                 const providerIcon: any = (icons as any)[iconKey] || null;
 
@@ -552,10 +582,15 @@ export default function DetailsScreen() {
                 }
 
                 const initials = providerName
-                  ? providerName.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase()
+                  ? providerName
+                      .replace(/[^A-Za-z0-9]/g, "")
+                      .slice(0, 2)
+                      .toUpperCase()
                   : "??";
                 return (
-                  <Text style={{ color: "#555", fontWeight: "700", fontSize: 24 }}>
+                  <Text
+                    style={{ color: "#555", fontWeight: "700", fontSize: 24 }}
+                  >
                     {initials}
                   </Text>
                 );
@@ -567,7 +602,7 @@ export default function DetailsScreen() {
               <Text
                 style={{
                   fontSize: 24,
-                  color: "#0a0a0a",
+                  color: colors.text,
                   fontWeight: "500",
                   lineHeight: 32,
                   marginBottom: 4,
@@ -578,7 +613,7 @@ export default function DetailsScreen() {
               <Text
                 style={{
                   fontSize: 16,
-                  color: "#6a7282",
+                  color: colors.subText,
                   lineHeight: 24,
                 }}
               >
@@ -588,14 +623,17 @@ export default function DetailsScreen() {
           </View>
 
           {/* OTP Card Section */}
-          {data?.value && otpCode !== "N/A" && otpCode !== "Invalid OTP" && otpCode !== "Generating..." ? (
+          {data?.value &&
+          otpCode !== "N/A" &&
+          otpCode !== "Invalid OTP" &&
+          otpCode !== "Generating..." ? (
             <View
               style={{
                 borderWidth: 0.613,
                 borderColor: "#dbeafe",
                 borderRadius: 14,
                 padding: 24.609,
-                backgroundColor: "#eff6ff",
+                backgroundColor: colors.otpBackground,
                 gap: 16,
               }}
             >
@@ -607,20 +645,22 @@ export default function DetailsScreen() {
                   justifyContent: "space-between",
                 }}
               >
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+                >
                   <View
                     style={{
                       width: 8,
                       height: 8,
                       borderRadius: 4,
-                      backgroundColor: "#155dfc",
+                      backgroundColor: colors.otpPrimary,
                       opacity: 0.64,
                     }}
                   />
                   <Text
                     style={{
                       fontSize: 14,
-                      color: "#364153",
+                      color: colors.text,
                       lineHeight: 20,
                     }}
                   >
@@ -629,7 +669,7 @@ export default function DetailsScreen() {
                 </View>
                 <View
                   style={{
-                    backgroundColor: "#dbeafe",
+                    backgroundColor: colors.background,
                     borderRadius: 20,
                     paddingHorizontal: 12,
                     paddingVertical: 4,
@@ -638,7 +678,7 @@ export default function DetailsScreen() {
                     gap: 8,
                   }}
                 >
-                  <Ionicons name="time-outline" size={12} color="#1447e6" />
+                  <Ionicons name="time-outline" size={12} color={colors.text} />
                   <Text
                     style={{
                       fontSize: 12,
@@ -665,7 +705,7 @@ export default function DetailsScreen() {
                   <Text
                     style={{
                       fontSize: 48,
-                      color: "#155dfc",
+                      color: colors.otpPrimary,
                       lineHeight: 48,
                       letterSpacing: 4.8,
                       fontWeight: "400",
@@ -690,7 +730,7 @@ export default function DetailsScreen() {
                 <View
                   style={{
                     height: 8,
-                    backgroundColor: "#e5e7eb",
+                    backgroundColor: colors.border,
                     borderRadius: 4,
                     overflow: "hidden",
                   }}
@@ -699,7 +739,7 @@ export default function DetailsScreen() {
                     style={{
                       height: "100%",
                       width: progressBarWidth,
-                      backgroundColor: "#155dfc",
+                      backgroundColor: colors.otpPrimary,
                       borderRadius: 4,
                     }}
                   />
@@ -711,7 +751,7 @@ export default function DetailsScreen() {
                   activeOpacity={0.8}
                   style={{
                     height: 32,
-                    backgroundColor: "#fff",
+                    backgroundColor: colors.background,
                     borderWidth: 0.613,
                     borderColor: "#bedbff",
                     borderRadius: 8,
@@ -721,11 +761,11 @@ export default function DetailsScreen() {
                     gap: 8,
                   }}
                 >
-                  <Ionicons name="copy-outline" size={16} color="#0a0a0a" />
+                  <Ionicons name="copy-outline" size={16} color={colors.text} />
                   <Text
                     style={{
                       fontSize: 14,
-                      color: "#0a0a0a",
+                      color: colors.text,
                       fontWeight: "500",
                       lineHeight: 20,
                     }}
@@ -744,19 +784,21 @@ export default function DetailsScreen() {
               <Text
                 style={{
                   fontSize: 14,
-                  color: "#4a5565",
+                  color: colors.text,
                   fontWeight: "500",
                   lineHeight: 20,
                 }}
               >
                 Password
               </Text>
-              <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+              <View
+                style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
+              >
                 <View
                   style={{
                     flex: 1,
                     height: 44,
-                    backgroundColor: "#f9fafb",
+                    backgroundColor: colors.input,
                     borderRadius: 10,
                     paddingHorizontal: 16,
                     justifyContent: "center",
@@ -765,7 +807,7 @@ export default function DetailsScreen() {
                   <Text
                     style={{
                       fontSize: 14,
-                      color: "#0a0a0a",
+                      color: colors.text,
                       lineHeight: 20,
                     }}
                   >
@@ -774,8 +816,8 @@ export default function DetailsScreen() {
                         ? decryptedPassword
                         : "••••••••••••"
                       : decryptionError
-                      ? "Failed to decrypt"
-                      : "N/A"}
+                        ? "Failed to decrypt"
+                        : "N/A"}
                   </Text>
                 </View>
                 {decryptedPassword && (
@@ -786,7 +828,7 @@ export default function DetailsScreen() {
                       style={{
                         width: 48,
                         height: 44,
-                        backgroundColor: "#fff",
+                        backgroundColor: colors.input,
                         borderWidth: 0.613,
                         borderColor: "rgba(0,0,0,0.1)",
                         borderRadius: 8,
@@ -797,16 +839,18 @@ export default function DetailsScreen() {
                       <Ionicons
                         name={showPassword ? "eye-off-outline" : "eye-outline"}
                         size={20}
-                        color="#000"
+                        color={colors.text}
                       />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      onPress={() => copyToClipboard(decryptedPassword, "password")}
+                      onPress={() =>
+                        copyToClipboard(decryptedPassword, "password")
+                      }
                       activeOpacity={0.8}
                       style={{
                         width: 48,
                         height: 44,
-                        backgroundColor: "#fff",
+                        backgroundColor: colors.input,
                         borderWidth: 0.613,
                         borderColor: "rgba(0,0,0,0.1)",
                         borderRadius: 8,
@@ -814,7 +858,11 @@ export default function DetailsScreen() {
                         justifyContent: "center",
                       }}
                     >
-                      <Ionicons name="copy-outline" size={20} color="#000" />
+                      <Ionicons
+                        name="copy-outline"
+                        size={20}
+                        color={colors.text}
+                      />
                     </TouchableOpacity>
                   </>
                 )}
@@ -827,7 +875,7 @@ export default function DetailsScreen() {
                 <Text
                   style={{
                     fontSize: 14,
-                    color: "#4a5565",
+                    color: colors.text,
                     fontWeight: "500",
                     lineHeight: 20,
                   }}
@@ -839,7 +887,7 @@ export default function DetailsScreen() {
                   activeOpacity={0.8}
                   style={{
                     height: 48,
-                    backgroundColor: "#f9fafb",
+                    backgroundColor: colors.input,
                     borderRadius: 10,
                     paddingHorizontal: 16,
                     justifyContent: "center",
@@ -848,7 +896,7 @@ export default function DetailsScreen() {
                   <Text
                     style={{
                       fontSize: 14,
-                      color: "#155dfc",
+                      color: colors.otpPrimary,
                       lineHeight: 20,
                     }}
                   >
@@ -863,19 +911,21 @@ export default function DetailsScreen() {
               <Text
                 style={{
                   fontSize: 14,
-                  color: "#4a5565",
+                  color: colors.text,
                   fontWeight: "500",
                   lineHeight: 20,
                 }}
               >
                 Username
               </Text>
-              <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+              <View
+                style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
+              >
                 <View
                   style={{
                     flex: 1,
                     height: 44,
-                    backgroundColor: "#f9fafb",
+                    backgroundColor: colors.input,
                     borderRadius: 10,
                     paddingHorizontal: 16,
                     justifyContent: "center",
@@ -884,7 +934,7 @@ export default function DetailsScreen() {
                   <Text
                     style={{
                       fontSize: 14,
-                      color: "#0a0a0a",
+                      color: colors.text,
                       lineHeight: 20,
                     }}
                   >
@@ -898,7 +948,7 @@ export default function DetailsScreen() {
                     style={{
                       width: 48,
                       height: 44,
-                      backgroundColor: "#fff",
+                      backgroundColor: colors.input,
                       borderWidth: 0.613,
                       borderColor: "rgba(0,0,0,0.1)",
                       borderRadius: 8,
@@ -906,7 +956,11 @@ export default function DetailsScreen() {
                       justifyContent: "center",
                     }}
                   >
-                    <Ionicons name="copy-outline" size={20} color="#000" />
+                    <Ionicons
+                      name="copy-outline"
+                      size={20}
+                      color={colors.text}
+                    />
                   </TouchableOpacity>
                 )}
               </View>
@@ -917,7 +971,7 @@ export default function DetailsScreen() {
               <Text
                 style={{
                   fontSize: 14,
-                  color: "#4a5565",
+                  color: colors.text,
                   fontWeight: "500",
                   lineHeight: 20,
                 }}
@@ -927,7 +981,7 @@ export default function DetailsScreen() {
               <View
                 style={{
                   minHeight: 44,
-                  backgroundColor: "#f9fafb",
+                  backgroundColor: colors.input,
                   borderRadius: 10,
                   paddingHorizontal: 16,
                   paddingVertical: 12,
@@ -936,7 +990,7 @@ export default function DetailsScreen() {
                 <Text
                   style={{
                     fontSize: 14,
-                    color: "#0a0a0a",
+                    color: colors.text,
                     lineHeight: 20,
                   }}
                 >
@@ -950,7 +1004,7 @@ export default function DetailsScreen() {
               <View
                 style={{
                   borderTopWidth: 0.613,
-                  borderTopColor: "#e5e7eb",
+                  borderTopColor: colors.border,
                   paddingTop: 16.6,
                   gap: 4,
                 }}
@@ -959,7 +1013,7 @@ export default function DetailsScreen() {
                   <Text
                     style={{
                       fontSize: 12,
-                      color: "#99a1af",
+                      color: colors.text,
                       lineHeight: 16,
                     }}
                   >
@@ -970,7 +1024,7 @@ export default function DetailsScreen() {
                   <Text
                     style={{
                       fontSize: 12,
-                      color: "#99a1af",
+                      color: colors.text,
                       lineHeight: 16,
                     }}
                   >

@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import PinSetupScreen from "./components/PinSetupScreen";
 import PinVerificationScreen from "./components/PinVerificationScreen";
+import { useTheme } from "./context/ThemeContext";
 import {
   decryptWithMasterKey,
   encryptWithMasterKey,
@@ -63,6 +64,8 @@ export default function SettingsScreen() {
   const [isInitialSetup, setIsInitialSetup] = useState(false);
   const [showPinVerification, setShowPinVerification] = useState(false);
   const [isRemovingPin, setIsRemovingPin] = useState(false);
+  const [showThemeOptions, setShowThemeOptions] = useState(false);
+  const { themeMode, resolvedTheme, setThemeMode, colors } = useTheme();
 
   // Hide default header and use custom header
   useLayoutEffect(() => {
@@ -1071,18 +1074,18 @@ export default function SettingsScreen() {
       <View
         style={{
           flex: 1,
-          backgroundColor: "#fff",
+          backgroundColor: colors.background,
           justifyContent: "center",
           alignItems: "center",
         }}
       >
-        <ActivityIndicator size="large" color="#000" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#fff" }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* PIN Verification Modal */}
       {showPinVerification && (
         <View
@@ -1092,7 +1095,7 @@ export default function SettingsScreen() {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "#fff",
+            backgroundColor: colors.background,
             zIndex: 1001,
           }}
         >
@@ -1112,7 +1115,7 @@ export default function SettingsScreen() {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "#fff",
+            backgroundColor: colors.background,
             zIndex: 1000,
           }}
         >
@@ -1127,7 +1130,7 @@ export default function SettingsScreen() {
       <View
         style={{
           borderBottomWidth: 0.613,
-          borderBottomColor: "#e5e7eb",
+          borderBottomColor: colors.border,
           paddingTop: insets.top,
           minHeight: 72.591,
           flexDirection: "row",
@@ -1149,19 +1152,35 @@ export default function SettingsScreen() {
             borderRadius: 8,
           }}
         >
-          <Ionicons name="arrow-back" size={20} color="#000" />
+          <Ionicons name="arrow-back" size={20} color={colors.primary} />
         </TouchableOpacity>
 
         {/* Title */}
         <View style={{ flex: 1, alignItems: "center" }}>
-          <Text style={{ fontSize: 17, fontWeight: "600", color: "#000" }}>
+          <Text
+            style={{
+              fontSize: 17,
+              fontWeight: "600",
+              color: colors.primary,
+              marginRight: 42,
+            }}
+          >
             Settings
           </Text>
         </View>
 
-        {/* Spacer to balance the layout */}
-        <View style={{ width: 36 }} />
+        {/* Spacer to balance the layout
+        <View style={{ width: 36 }} /> */}
       </View>
+
+      {/* Theme Divider */}
+      {/* <View
+        style={{
+          height: 1,
+          backgroundColor: colors.border,
+          marginVertical: 32,
+        }}
+      /> */}
 
       <ScrollView
         contentContainerStyle={{ flexGrow: 1, paddingBottom: 50 }}
@@ -1179,7 +1198,7 @@ export default function SettingsScreen() {
           >
             <View
               style={{
-                backgroundColor: "#f3f4f6",
+                backgroundColor: colors.card,
                 width: 40,
                 height: 40,
                 borderRadius: 10,
@@ -1187,20 +1206,24 @@ export default function SettingsScreen() {
                 alignItems: "center",
               }}
             >
-              <Ionicons name="git-branch-outline" size={20} color="#0a0a0a" />
+              <Ionicons
+                name="git-branch-outline"
+                size={20}
+                color={colors.text}
+              />
             </View>
             <View style={{ flex: 1 }}>
               <Text
                 style={{
                   fontSize: 14,
                   fontWeight: "500",
-                  color: "#0a0a0a",
+                  color: colors.text,
                   marginBottom: 2,
                 }}
               >
                 GitHub Gist Sync
               </Text>
-              <Text style={{ fontSize: 12, color: "#6a7282" }}>
+              <Text style={{ fontSize: 12, color: colors.subText }}>
                 Sync your encrypted vault
               </Text>
             </View>
@@ -1213,7 +1236,7 @@ export default function SettingsScreen() {
                 style={{
                   fontSize: 14,
                   fontWeight: "500",
-                  color: "#0a0a0a",
+                  color: colors.text,
                   marginBottom: 8,
                 }}
               >
@@ -1229,17 +1252,17 @@ export default function SettingsScreen() {
                 }
                 onChangeText={setGithubToken}
                 placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                placeholderTextColor="#717182"
+                placeholderTextColor={colors.subText}
                 secureTextEntry={hasToken ? !showToken : false}
                 editable={!hasToken}
                 style={{
-                  backgroundColor: "#f9fafb",
+                  backgroundColor: colors.card,
                   borderWidth: 0.6,
-                  borderColor: "#e5e7eb",
+                  borderColor: colors.border,
                   borderRadius: 8,
                   padding: 12,
                   fontSize: 16,
-                  color: "#0a0a0a",
+                  color: colors.text,
                   fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
                 }}
                 autoCapitalize="none"
@@ -1252,7 +1275,7 @@ export default function SettingsScreen() {
                 >
                   <Text
                     style={{
-                      color: "#0a0a0a",
+                      color: colors.text,
                       fontSize: 12,
                       fontWeight: "500",
                     }}
@@ -1269,7 +1292,7 @@ export default function SettingsScreen() {
                 style={{
                   fontSize: 14,
                   fontWeight: "500",
-                  color: "#0a0a0a",
+                  color: colors.text,
                   marginBottom: 8,
                 }}
               >
@@ -1279,15 +1302,15 @@ export default function SettingsScreen() {
                 value={gistIdInput}
                 onChangeText={setGistIdInput}
                 placeholder="Optional"
-                placeholderTextColor="#717182"
+                placeholderTextColor={colors.subText}
                 style={{
-                  backgroundColor: "#f9fafb",
+                  backgroundColor: colors.card,
                   borderWidth: 0.6,
-                  borderColor: "#e5e7eb",
+                  borderColor: colors.border,
                   borderRadius: 8,
                   padding: 12,
                   fontSize: 16,
-                  color: "#0a0a0a",
+                  color: colors.text,
                   fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
                 }}
                 autoCapitalize="none"
@@ -1304,7 +1327,9 @@ export default function SettingsScreen() {
                 height: 36,
               }}
             >
-              <Text style={{ fontSize: 14, color: "#0a0a0a" }}>Auto Sync</Text>
+              <Text style={{ fontSize: 14, color: colors.text }}>
+                Auto Sync
+              </Text>
               <Switch
                 value={autoRestoreEnabled}
                 onValueChange={toggleAutoRestore}
@@ -1321,7 +1346,7 @@ export default function SettingsScreen() {
                 onPress={saveToken}
                 style={{
                   flex: 1,
-                  backgroundColor: "#000",
+                  backgroundColor: colors.primary,
                   height: 44,
                   borderRadius: 8,
                   justifyContent: "center",
@@ -1330,10 +1355,14 @@ export default function SettingsScreen() {
                 disabled={isWorking}
               >
                 {isWorking && status.includes("Validating") ? (
-                  <ActivityIndicator color="#fff" size="small" />
+                  <ActivityIndicator color={colors.background} size="small" />
                 ) : (
                   <Text
-                    style={{ color: "#fff", fontSize: 14, fontWeight: "500" }}
+                    style={{
+                      color: colors.background,
+                      fontSize: 14,
+                      fontWeight: "500",
+                    }}
                   >
                     Save
                   </Text>
@@ -1343,9 +1372,9 @@ export default function SettingsScreen() {
                 onPress={handleSync}
                 style={{
                   width: 66,
-                  backgroundColor: "#fff",
+                  backgroundColor: colors.background,
                   borderWidth: 0.6,
-                  borderColor: "rgba(0,0,0,0.1)",
+                  borderColor: colors.border,
                   height: 44,
                   borderRadius: 8,
                   justifyContent: "center",
@@ -1357,11 +1386,11 @@ export default function SettingsScreen() {
                 (status.includes("Encrypting") ||
                   status.includes("Uploading") ||
                   status.includes("Creating")) ? (
-                  <ActivityIndicator color="#0a0a0a" size="small" />
+                  <ActivityIndicator color={colors.text} size="small" />
                 ) : (
                   <Text
                     style={{
-                      color: "#0a0a0a",
+                      color: colors.text,
                       fontSize: 14,
                       fontWeight: "500",
                     }}
@@ -1379,17 +1408,17 @@ export default function SettingsScreen() {
               style={{
                 marginTop: 24,
                 padding: 16,
-                backgroundColor: "#f9fafb",
+                backgroundColor: colors.card,
                 borderRadius: 8,
                 borderWidth: 0.6,
-                borderColor: "#e5e7eb",
+                borderColor: colors.border,
               }}
             >
               <Text
                 style={{
                   fontSize: 14,
                   fontWeight: "500",
-                  color: "#0a0a0a",
+                  color: colors.text,
                   marginBottom: 12,
                 }}
               >
@@ -1402,14 +1431,18 @@ export default function SettingsScreen() {
                     style={{
                       fontSize: 13,
                       fontWeight: "500",
-                      color: "#0a0a0a",
+                      color: colors.text,
                       marginBottom: 4,
                     }}
                   >
                     1. Go to GitHub Settings
                   </Text>
                   <Text
-                    style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}
+                    style={{
+                      fontSize: 12,
+                      color: colors.subText,
+                      lineHeight: 18,
+                    }}
                   >
                     Visit github.com/settings/tokens
                   </Text>
@@ -1420,14 +1453,18 @@ export default function SettingsScreen() {
                     style={{
                       fontSize: 13,
                       fontWeight: "500",
-                      color: "#0a0a0a",
+                      color: colors.text,
                       marginBottom: 4,
                     }}
                   >
                     2. Generate New Token
                   </Text>
                   <Text
-                    style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}
+                    style={{
+                      fontSize: 12,
+                      color: colors.subText,
+                      lineHeight: 18,
+                    }}
                   >
                     Click "Generate new token (classic)"
                   </Text>
@@ -1438,14 +1475,18 @@ export default function SettingsScreen() {
                     style={{
                       fontSize: 13,
                       fontWeight: "500",
-                      color: "#0a0a0a",
+                      color: colors.text,
                       marginBottom: 4,
                     }}
                   >
                     3. Configure Token
                   </Text>
                   <Text
-                    style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}
+                    style={{
+                      fontSize: 12,
+                      color: colors.subText,
+                      lineHeight: 18,
+                    }}
                   >
                     • Name: "2FA App" or similar{"\n"}• Expiration: No
                     expiration (recommended){"\n"}• Scopes: Check "gist" for
@@ -1458,14 +1499,18 @@ export default function SettingsScreen() {
                     style={{
                       fontSize: 13,
                       fontWeight: "500",
-                      color: "#0a0a0a",
+                      color: colors.text,
                       marginBottom: 4,
                     }}
                   >
                     4. Copy & Save
                   </Text>
                   <Text
-                    style={{ fontSize: 12, color: "#6a7282", lineHeight: 18 }}
+                    style={{
+                      fontSize: 12,
+                      color: colors.subText,
+                      lineHeight: 18,
+                    }}
                   >
                     Copy the token (starts with ghp_) and paste it above. Save
                     it in a password manager as backup!
@@ -1480,7 +1525,130 @@ export default function SettingsScreen() {
         <View
           style={{
             height: 1,
-            backgroundColor: "rgba(0,0,0,0.1)",
+            backgroundColor: colors.border,
+            marginVertical: 32,
+          }}
+        />
+
+        {/* Dark Mode Toggle */}
+        <View style={{ paddingHorizontal: 24 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              height: 36,
+            }}
+          >
+            <Text style={{ fontSize: 14, color: colors.text }}>Dark Mode</Text>
+            <TouchableOpacity
+              onPress={() => setShowThemeOptions((prev) => !prev)}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                paddingHorizontal: 12,
+                height: 32,
+                borderRadius: 8,
+                borderWidth: 0.6,
+                borderColor: colors.border,
+                backgroundColor: colors.background,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: colors.text,
+                  marginRight: 6,
+                }}
+              >
+                {themeMode === "light"
+                  ? "Light"
+                  : themeMode === "dark"
+                  ? "Dark"
+                  : "System"}
+              </Text>
+              <Ionicons
+                name={showThemeOptions ? "chevron-up" : "chevron-down"}
+                size={14}
+                color={colors.subText}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {showThemeOptions && (
+            <View
+              style={{
+                marginTop: 8,
+                borderRadius: 8,
+                borderWidth: 0.6,
+                borderColor: colors.border,
+                backgroundColor: colors.card,
+                overflow: "hidden",
+              }}
+            >
+              <TouchableOpacity
+                onPress={() => {
+                  setThemeMode("light");
+                  setShowThemeOptions(false);
+                }}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                }}
+              >
+                <Text style={{ color: colors.text, fontSize: 14 }}>Light</Text>
+              </TouchableOpacity>
+
+              <View
+                style={{
+                  height: 1,
+                  backgroundColor: colors.border,
+                  opacity: 0.5,
+                }}
+              />
+
+              <TouchableOpacity
+                onPress={() => {
+                  setThemeMode("dark");
+                  setShowThemeOptions(false);
+                }}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                }}
+              >
+                <Text style={{ color: colors.text, fontSize: 14 }}>Dark</Text>
+              </TouchableOpacity>
+
+              <View
+                style={{
+                  height: 1,
+                  backgroundColor: colors.border,
+                  opacity: 0.5,
+                }}
+              />
+
+              <TouchableOpacity
+                onPress={() => {
+                  setThemeMode("system");
+                  setShowThemeOptions(false);
+                }}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                }}
+              >
+                <Text style={{ color: colors.text, fontSize: 14 }}>System</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* Divider */}
+        <View
+          style={{
+            height: 1,
+            backgroundColor: colors.border,
             marginVertical: 32,
           }}
         />
@@ -1491,7 +1659,7 @@ export default function SettingsScreen() {
             style={{
               fontSize: 14,
               fontWeight: "500",
-              color: "#0a0a0a",
+              color: colors.text,
               marginBottom: 16,
             }}
           >
@@ -1503,9 +1671,9 @@ export default function SettingsScreen() {
               <TouchableOpacity
                 onPress={handleChangePin}
                 style={{
-                  backgroundColor: "#fff",
+                  backgroundColor: colors.background,
                   borderWidth: 0.6,
-                  borderColor: "rgba(0,0,0,0.1)",
+                  borderColor: colors.border,
                   height: 44,
                   borderRadius: 8,
                   flexDirection: "row",
@@ -1516,11 +1684,11 @@ export default function SettingsScreen() {
                 <Ionicons
                   name="lock-closed-outline"
                   size={16}
-                  color="#0a0a0a"
+                  color={colors.text}
                 />
                 <Text
                   style={{
-                    color: "#0a0a0a",
+                    color: colors.text,
                     fontSize: 14,
                     fontWeight: "500",
                     marginLeft: 12,
@@ -1534,9 +1702,9 @@ export default function SettingsScreen() {
                 <TouchableOpacity
                   onPress={handleChangePin}
                   style={{
-                    backgroundColor: "#fff",
+                    backgroundColor: colors.background,
                     borderWidth: 0.6,
-                    borderColor: "rgba(0,0,0,0.1)",
+                    borderColor: colors.border,
                     height: 44,
                     borderRadius: 8,
                     flexDirection: "row",
@@ -1544,10 +1712,10 @@ export default function SettingsScreen() {
                     paddingHorizontal: 12,
                   }}
                 >
-                  <Ionicons name="key-outline" size={16} color="#0a0a0a" />
+                  <Ionicons name="key-outline" size={16} color={colors.text} />
                   <Text
                     style={{
-                      color: "#0a0a0a",
+                      color: colors.text,
                       fontSize: 14,
                       fontWeight: "500",
                       marginLeft: 12,
@@ -1560,9 +1728,9 @@ export default function SettingsScreen() {
                 <TouchableOpacity
                   onPress={handleRemovePin}
                   style={{
-                    backgroundColor: "#fff",
+                    backgroundColor: colors.background,
                     borderWidth: 0.6,
-                    borderColor: "rgba(0,0,0,0.1)",
+                    borderColor: colors.border,
                     height: 44,
                     borderRadius: 8,
                     flexDirection: "row",
@@ -1573,11 +1741,11 @@ export default function SettingsScreen() {
                   <Ionicons
                     name="lock-open-outline"
                     size={16}
-                    color="#e7000b"
+                    color={colors.danger}
                   />
                   <Text
                     style={{
-                      color: "#e7000b",
+                      color: colors.danger,
                       fontSize: 14,
                       fontWeight: "500",
                       marginLeft: 12,
@@ -1595,7 +1763,7 @@ export default function SettingsScreen() {
         <View
           style={{
             height: 1,
-            backgroundColor: "rgba(0,0,0,0.1)",
+            backgroundColor: colors.border,
             marginVertical: 32,
           }}
         />
@@ -1606,7 +1774,7 @@ export default function SettingsScreen() {
             style={{
               fontSize: 14,
               fontWeight: "500",
-              color: "#0a0a0a",
+              color: colors.text,
               marginBottom: 16,
             }}
           >
@@ -1617,9 +1785,9 @@ export default function SettingsScreen() {
             <TouchableOpacity
               onPress={exportAllAccounts}
               style={{
-                backgroundColor: "#fff",
+                backgroundColor: colors.background,
                 borderWidth: 0.6,
-                borderColor: "rgba(0,0,0,0.1)",
+                borderColor: colors.border,
                 height: 44,
                 borderRadius: 8,
                 flexDirection: "row",
@@ -1628,10 +1796,10 @@ export default function SettingsScreen() {
               }}
               disabled={!hasToken || isWorking}
             >
-              <Ionicons name="download-outline" size={16} color="#0a0a0a" />
+              <Ionicons name="download-outline" size={16} color={colors.text} />
               <Text
                 style={{
-                  color: "#0a0a0a",
+                  color: colors.text,
                   fontSize: 14,
                   fontWeight: "500",
                   marginLeft: 12,
@@ -1646,9 +1814,9 @@ export default function SettingsScreen() {
             <TouchableOpacity
               onPress={importFromLatestBackup}
               style={{
-                backgroundColor: "#fff",
+                backgroundColor: colors.background,
                 borderWidth: 0.6,
-                borderColor: "rgba(0,0,0,0.1)",
+                borderColor: colors.border,
                 height: 44,
                 borderRadius: 8,
                 flexDirection: "row",
@@ -1657,10 +1825,14 @@ export default function SettingsScreen() {
               }}
               disabled={!hasToken || isWorking}
             >
-              <Ionicons name="cloud-upload-outline" size={16} color="#0a0a0a" />
+              <Ionicons
+                name="cloud-upload-outline"
+                size={16}
+                color={colors.text}
+              />
               <Text
                 style={{
-                  color: "#0a0a0a",
+                  color: colors.text,
                   fontSize: 14,
                   fontWeight: "500",
                   marginLeft: 12,
@@ -1675,9 +1847,9 @@ export default function SettingsScreen() {
             <TouchableOpacity
               onPress={clearAllData}
               style={{
-                backgroundColor: "#fff",
+                backgroundColor: colors.background,
                 borderWidth: 0.6,
-                borderColor: "rgba(0,0,0,0.1)",
+                borderColor: colors.border,
                 height: 44,
                 borderRadius: 8,
                 flexDirection: "row",
@@ -1685,10 +1857,10 @@ export default function SettingsScreen() {
                 paddingHorizontal: 12,
               }}
             >
-              <Ionicons name="trash-outline" size={16} color="#e7000b" />
+              <Ionicons name="trash-outline" size={16} color={colors.danger} />
               <Text
                 style={{
-                  color: "#e7000b",
+                  color: colors.danger,
                   fontSize: 14,
                   fontWeight: "500",
                   marginLeft: 12,
@@ -1706,19 +1878,25 @@ export default function SettingsScreen() {
             style={{
               width: 48,
               height: 48,
-              backgroundColor: "#000",
+              backgroundColor: colors.primary,
               borderRadius: 16,
               justifyContent: "center",
               alignItems: "center",
               marginBottom: 16,
             }}
           >
-            <Ionicons name="shield-checkmark-outline" size={24} color="#fff" />
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={24}
+              color={colors.background}
+            />
           </View>
-          <Text style={{ fontSize: 12, color: "#99a1af", marginBottom: 4 }}>
+          <Text
+            style={{ fontSize: 12, color: colors.subText, marginBottom: 4 }}
+          >
             AuthFactory 2026
           </Text>
-          <Text style={{ fontSize: 12, color: "#99a1af" }}>v1.0.0</Text>
+          <Text style={{ fontSize: 12, color: colors.subText }}>v1.0.0</Text>
         </View>
 
         {/* Status Display */}
@@ -1730,8 +1908,8 @@ export default function SettingsScreen() {
               padding: 12,
               backgroundColor:
                 status.includes("Failed") || status.includes("failed")
-                  ? "#fee2e2"
-                  : "#d1fae5",
+                  ? colors.danger
+                  : colors.primary,
               borderRadius: 8,
             }}
           >
@@ -1739,8 +1917,8 @@ export default function SettingsScreen() {
               style={{
                 color:
                   status.includes("Failed") || status.includes("failed")
-                    ? "#991b1b"
-                    : "#065f46",
+                    ? colors.danger
+                    : colors.primary,
                 fontSize: 13,
                 fontWeight: "500",
               }}

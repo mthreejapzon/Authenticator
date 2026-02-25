@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTheme } from "../context/ThemeContext";
 
 interface PinUnlockScreenProps {
   onUnlock: () => void;
@@ -18,6 +19,7 @@ const PIN_LENGTH = 6;
 
 export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
 
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
@@ -29,9 +31,8 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
     null,
   );
 
-  /*
-   * LOCKOUT COUNTDOWN TIMER
-   */
+  /* ---------------- LOCKOUT TIMER ---------------- */
+
   useEffect(() => {
     if (!lockoutRemainingMs) return;
 
@@ -50,9 +51,8 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
     return () => clearInterval(timer);
   }, [lockoutRemainingMs]);
 
-  /*
-   * CHECK LOCKOUT STATUS ON MOUNT
-   */
+  /* ---------------- CHECK LOCKOUT ---------------- */
+
   useEffect(() => {
     checkLockoutStatus();
   }, []);
@@ -71,9 +71,8 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
     }
   };
 
-  /*
-   * PIN INPUT
-   */
+  /* ---------------- PIN INPUT ---------------- */
+
   const handlePinInput = (digit: string) => {
     if (pin.length < PIN_LENGTH && !lockoutRemainingMs) {
       const newPin = pin + digit;
@@ -81,7 +80,6 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
       setError("");
       setAttemptsRemaining(null);
 
-      // STRICT 6 DIGIT VERIFY
       if (newPin.length === PIN_LENGTH) {
         verifyPin(newPin);
       }
@@ -94,9 +92,8 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
     setAttemptsRemaining(null);
   };
 
-  /*
-   * VERIFY PIN
-   */
+  /* ---------------- VERIFY ---------------- */
+
   const verifyPin = async (pinToVerify: string) => {
     setIsVerifying(true);
 
@@ -137,9 +134,8 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
     }
   };
 
-  /*
-   * FORMAT LOCKOUT TIME
-   */
+  /* ---------------- FORMAT TIME ---------------- */
+
   const formatRemaining = () => {
     if (!lockoutRemainingMs) return "";
 
@@ -154,6 +150,8 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
     return `${seconds}s`;
   };
 
+  /* ---------------- PIN DOTS ---------------- */
+
   const renderPinDots = () => (
     <View style={{ flexDirection: "row", gap: 12, justifyContent: "center" }}>
       {Array.from({ length: PIN_LENGTH }).map((_, i) => (
@@ -163,99 +161,69 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
             width: 14,
             height: 14,
             borderRadius: 7,
-            backgroundColor: i < pin.length ? "#000" : "#e5e7eb",
+            backgroundColor: i < pin.length ? colors.primary : colors.border,
           }}
         />
       ))}
     </View>
   );
 
-  return (
-    <View style={{ flex: 1, backgroundColor: "#fff", paddingTop: insets.top }}>
-      {/* Header */}
-      <View
-        style={{
-          paddingHorizontal: 24,
-          paddingVertical: 40,
-          alignItems: "center",
-        }}
-      >
-        <View
-          style={{
-            width: 80,
-            height: 80,
-            backgroundColor: "#000",
-            borderRadius: 20,
-            justifyContent: "center",
-            alignItems: "center",
-            marginBottom: 24,
-          }}
-        >
-          <Ionicons name="lock-closed" size={40} color="#fff" />
-        </View>
+  /* ---------------- UI ---------------- */
 
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: colors.background,
+        paddingTop: insets.top,
+      }}
+    >
+      {/* HEADER */}
+      <View style={{ paddingHorizontal: 24, paddingVertical: 20 }}>
         <Text
           style={{
             fontSize: 28,
             fontWeight: "700",
-            color: "#000",
+            color: colors.text,
             marginBottom: 8,
           }}
         >
-          Enter PIN
+          Enter Security PIN
         </Text>
 
-        <Text style={{ fontSize: 16, color: "#6a7282", textAlign: "center" }}>
-          Unlock your authenticator to view codes
+        <Text
+          style={{
+            fontSize: 16,
+            color: colors.subText,
+            lineHeight: 24,
+          }}
+        >
+          Enter your 6-digit PIN to unlock your authenticator
         </Text>
       </View>
 
-      {/* PIN dots */}
+      {/* PIN DOTS */}
       <View style={{ paddingVertical: 40 }}>{renderPinDots()}</View>
 
-      {/* STATUS */}
-      <View
-        style={{
-          paddingHorizontal: 24,
-          minHeight: 60,
-          justifyContent: "center",
-        }}
-      >
-        {lockoutRemainingMs && (
-          <View
-            style={{ backgroundColor: "#fee2e2", padding: 16, borderRadius: 8 }}
+      {/* ERROR / LOCKOUT */}
+      <View style={{ paddingHorizontal: 24, marginBottom: 20 }}>
+        {lockoutRemainingMs ? (
+          <Text
+            style={{
+              color: colors.danger,
+              fontSize: 14,
+              textAlign: "center",
+            }}
           >
+            Locked. Try again in {formatRemaining()}
+          </Text>
+        ) : error ? (
+          <>
             <Text
               style={{
-                color: "#991b1b",
+                color: colors.danger,
                 fontSize: 14,
                 textAlign: "center",
-                fontWeight: "600",
-              }}
-            >
-              Locked out
-            </Text>
-            <Text
-              style={{
-                color: "#991b1b",
-                fontSize: 13,
-                textAlign: "center",
-                marginTop: 4,
-              }}
-            >
-              Try again in {formatRemaining()}
-            </Text>
-          </View>
-        )}
-
-        {!lockoutRemainingMs && error !== "" && (
-          <View>
-            <Text
-              style={{
-                color: "#e7000b",
-                fontSize: 14,
-                textAlign: "center",
-                fontWeight: "500",
               }}
             >
               {error}
@@ -264,24 +232,24 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
             {attemptsRemaining !== null && (
               <Text
                 style={{
-                  color: "#6a7282",
+                  color: colors.subText,
                   fontSize: 13,
                   textAlign: "center",
                   marginTop: 4,
                 }}
               >
-                {attemptsRemaining} remaining
+                {attemptsRemaining} attempts remaining
               </Text>
             )}
-          </View>
-        )}
-
-        {isVerifying && (
-          <View style={{ alignItems: "center" }}>
-            <ActivityIndicator color="#000" />
-          </View>
-        )}
+          </>
+        ) : null}
       </View>
+
+      {isVerifying && (
+        <View style={{ alignItems: "center", marginBottom: 20 }}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      )}
 
       {/* NUMBER PAD */}
       <View
@@ -309,12 +277,16 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
                         flex: 1,
                         height: 72,
                         borderRadius: 12,
-                        backgroundColor: "#f9fafb",
+                        backgroundColor: colors.card,
                         justifyContent: "center",
                         alignItems: "center",
                       }}
                     >
-                      <Ionicons name="backspace-outline" size={28} />
+                      <Ionicons
+                        name="backspace-outline"
+                        size={28}
+                        color={colors.text}
+                      />
                     </TouchableOpacity>
                   );
                 }
@@ -328,12 +300,18 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
                       flex: 1,
                       height: 72,
                       borderRadius: 12,
-                      backgroundColor: "#f9fafb",
+                      backgroundColor: colors.card,
                       justifyContent: "center",
                       alignItems: "center",
                     }}
                   >
-                    <Text style={{ fontSize: 28, fontWeight: "600" }}>
+                    <Text
+                      style={{
+                        fontSize: 28,
+                        fontWeight: "600",
+                        color: colors.text,
+                      }}
+                    >
                       {key}
                     </Text>
                   </TouchableOpacity>
@@ -346,7 +324,13 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
 
       {/* FOOTER */}
       <View style={{ padding: 24, paddingBottom: insets.bottom + 24 }}>
-        <Text style={{ fontSize: 12, color: "#9ca3af", textAlign: "center" }}>
+        <Text
+          style={{
+            fontSize: 12,
+            color: colors.subText,
+            textAlign: "center",
+          }}
+        >
           Forgot your PIN? You'll need to clear app data and set up again.
         </Text>
       </View>
