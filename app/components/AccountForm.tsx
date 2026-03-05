@@ -51,12 +51,12 @@ export default function AccountForm({
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
 
-  const { themeMode, setThemeMode, colors } = useTheme();
+  const { colors } = useTheme();
   const styles = createStyles(colors);
   const [isSaving, setIsSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
-  const [missingFields, setMissingFields] = useState<string[]>([]);
+  const [, setMissingFields] = useState<string[]>([]);
   const [hasToken, setHasToken] = useState(false);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(!!secretKey?.trim());
 
@@ -450,6 +450,7 @@ const createStyles = (colors: any) =>
     },
     textField: {
       flex: 1,
+      color: colors.text,
       height: 48,
     },
     divider: {
