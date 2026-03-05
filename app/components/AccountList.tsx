@@ -18,9 +18,23 @@ export default function AccountList(props: {
 }) {
   const { accounts, onDelete } = props;
   // Separate favorites from non-favorites
-  const favoriteAccounts = accounts.filter((acc) => acc.data?.isFavorite);
-  const regularAccounts = accounts.filter((acc) => !acc.data?.isFavorite);
+  const favoriteAccounts = accounts
+    .filter((acc) => acc.data?.isFavorite)
+    .sort(
+      (a, b) =>
+        a.data?.accountName
+          .toLowerCase()
+          .localeCompare(b.data?.accountName.toLowerCase() ?? "") ?? 0,
+    );
 
+  const regularAccounts = accounts
+    .filter((acc) => !acc.data?.isFavorite)
+    .sort(
+      (a, b) =>
+        a.data?.accountName
+          .toLowerCase()
+          .localeCompare(b.data?.accountName.toLowerCase() ?? "") ?? 0,
+    );
   const { colors } = useTheme();
 
   // Create sections

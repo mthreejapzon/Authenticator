@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, AppState, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import AppLockGate from "./components/AppLockGate";
 import PinUnlockScreen from "./components/PinUnlockScreen";
 import { FormProvider } from "./context/FormContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
@@ -11,9 +12,11 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
-        <FormProvider>
-          <RootContent />
-        </FormProvider>
+        <AppLockGate>
+          <FormProvider>
+            <RootContent />
+          </FormProvider>
+        </AppLockGate>
       </ThemeProvider>
     </GestureHandlerRootView>
   );

@@ -450,6 +450,7 @@ const createStyles = (colors: any) =>
     },
     textField: {
       flex: 1,
+      color: colors.text,
       height: 48,
     },
     divider: {
