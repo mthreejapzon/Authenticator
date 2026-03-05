@@ -1,41 +1,44 @@
-import { SectionList, Text, View } from 'react-native';
-import AccountListItem from './AccountListItem';
+import { SectionList, Text, View } from "react-native";
+import { useTheme } from "../context/ThemeContext";
+import AccountListItem from "./AccountListItem";
 
 export default function AccountList({
   accounts,
   onDelete,
   onEdit,
 }: {
-  accounts: { 
-    key: string; 
-    data: { 
-      accountName: string; 
-      username: string; 
-      password: string; 
+  accounts: {
+    key: string;
+    data: {
+      accountName: string;
+      username: string;
+      password: string;
       value: string;
       isFavorite?: boolean;
-    } | null 
+    } | null;
   }[];
   onDelete: (key: string) => void;
   onEdit: (key: string, newName: string) => void;
 }) {
   // Separate favorites from non-favorites
-  const favoriteAccounts = accounts.filter(acc => acc.data?.isFavorite);
-  const regularAccounts = accounts.filter(acc => !acc.data?.isFavorite);
+  const favoriteAccounts = accounts.filter((acc) => acc.data?.isFavorite);
+  const regularAccounts = accounts.filter((acc) => !acc.data?.isFavorite);
+
+  const { themeMode, setThemeMode, colors } = useTheme();
 
   // Create sections
   const sections = [];
-  
+
   if (favoriteAccounts.length > 0) {
     sections.push({
-      title: 'Favorites',
+      title: "Favorites",
       data: favoriteAccounts,
     });
   }
-  
+
   if (regularAccounts.length > 0) {
     sections.push({
-      title: favoriteAccounts.length > 0 ? 'All Accounts' : '',
+      title: favoriteAccounts.length > 0 ? "All Accounts" : "",
       data: regularAccounts,
     });
   }
@@ -44,25 +47,26 @@ export default function AccountList({
     <SectionList
       sections={sections}
       renderItem={({ item }) => (
-        <AccountListItem
-          account={item}
-          onDelete={onDelete}
-        />
+        <AccountListItem account={item} onDelete={onDelete} />
       )}
-      renderSectionHeader={({ section: { title } }) => 
+      renderSectionHeader={({ section: { title } }) =>
         title ? (
-          <View style={{ 
-            paddingHorizontal: 4,
-            paddingVertical: 8,
-            marginTop: 8,
-          }}>
-            <Text style={{ 
-              fontSize: 14,
-              fontWeight: '600',
-              color: '#6b7280',
-              textTransform: 'uppercase',
-              letterSpacing: 0.5,
-            }}>
+          <View
+            style={{
+              paddingHorizontal: 4,
+              paddingVertical: 8,
+              marginTop: 8,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 14,
+                fontWeight: "600",
+                color: colors.subText,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+              }}
+            >
               {title}
             </Text>
           </View>

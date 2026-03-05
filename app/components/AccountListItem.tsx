@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Platform, Text, TouchableOpacity, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
+import { useTheme } from "../context/ThemeContext";
 import { getProviderIcon, type IconData } from "../utils/getProviderIcon";
 
 export default function AccountListItem({
@@ -23,6 +24,7 @@ export default function AccountListItem({
 }) {
   const router = useRouter();
   const [isHovered, setIsHovered] = useState(false);
+  const { themeMode, setThemeMode, colors } = useTheme();
 
   if (!account.data) return null;
 
@@ -61,7 +63,7 @@ export default function AccountListItem({
               width: 40,
               height: 40,
               borderRadius: 10,
-              backgroundColor: "#f0f0f0",
+              backgroundColor: colors.card,
               justifyContent: "center",
               alignItems: "center",
               marginRight: 12,
@@ -87,7 +89,7 @@ export default function AccountListItem({
           >
             <Text
               style={{
-                color: "#fff",
+                color: colors.text,
                 fontWeight: "700",
                 fontSize: 16,
               }}
@@ -111,8 +113,8 @@ export default function AccountListItem({
         })
       }
       // @ts-ignore - web-only hover events
-      onMouseEnter={() => Platform.OS === 'web' && setIsHovered(true)}
-      onMouseLeave={() => Platform.OS === 'web' && setIsHovered(false)}
+      onMouseEnter={() => Platform.OS === "web" && setIsHovered(true)}
+      onMouseLeave={() => Platform.OS === "web" && setIsHovered(false)}
     >
       <View
         style={{
@@ -123,7 +125,8 @@ export default function AccountListItem({
           alignItems: "center",
           justifyContent: "space-between",
           borderRadius: 10,
-          backgroundColor: isHovered && Platform.OS === "web" ? "#f9fafb" : "#ffffff",
+          backgroundColor:
+            isHovered && Platform.OS === "web" ? "#f9fafb" : colors.background,
         }}
       >
         <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
@@ -133,7 +136,7 @@ export default function AccountListItem({
               width: 48,
               height: 48,
               borderRadius: 14,
-              backgroundColor: "#f3f4f6",
+              backgroundColor: colors.background,
               justifyContent: "center",
               alignItems: "center",
               marginRight: 16,
@@ -143,26 +146,26 @@ export default function AccountListItem({
           </View>
 
           <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+            >
               <Text
                 style={{
                   fontSize: 18,
                   fontWeight: "600",
-                  color: "#0a0a0a",
+                  color: colors.text,
                   flexShrink: 1,
                 }}
               >
                 {providerName}
               </Text>
-              
+
               {/* Favorite Star Icon */}
-              {isFavorite && (
-                <Ionicons name="star" size={16} color="#FFC107" />
-              )}
+              {isFavorite && <Ionicons name="star" size={16} color="#FFC107" />}
             </View>
 
             {account.data?.username && (
-              <Text style={{ color: "#999", fontSize: 14 }}>
+              <Text style={{ color: colors.text, fontSize: 14 }}>
                 {account.data.username}
               </Text>
             )}
@@ -174,7 +177,7 @@ export default function AccountListItem({
                   marginTop: 2,
                   fontSize: 12,
                   fontWeight: "500",
-                  color: "#155dfc",
+                  color: colors.text,
                 }}
               >
                 2FA Enabled
@@ -187,7 +190,7 @@ export default function AccountListItem({
         <Text
           style={{
             fontSize: 20,
-            color: "#c4c7d0",
+            color: colors.text,
             marginLeft: 8,
             fontWeight: "500",
           }}
@@ -197,6 +200,6 @@ export default function AccountListItem({
       </View>
     </TouchableOpacity>
   );
-  
+
   return cardContent;
 }

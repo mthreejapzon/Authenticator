@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
+  Image,
   Pressable,
   Text,
   TouchableOpacity,
@@ -12,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AccountList from "./components/AccountList";
+import { useTheme } from "./context/ThemeContext";
 import { Storage } from "./utils/storage";
 
 export default function Index() {
@@ -32,6 +34,7 @@ export default function Index() {
     }[]
   >([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const { themeMode, setThemeMode, colors } = useTheme();
 
   /**
    * 🔥 Disable native iOS / Android header completely
@@ -50,10 +53,8 @@ export default function Index() {
 
     (async () => {
       try {
-        const {
-          onSyncStateChange,
-          isSyncing: getCurrentSyncState,
-        } = await import("./utils/backupUtils");
+        const { onSyncStateChange, isSyncing: getCurrentSyncState } =
+          await import("./utils/backupUtils");
 
         setIsSyncing(getCurrentSyncState());
 
@@ -82,7 +83,7 @@ export default function Index() {
         keys.map(async (key: string) => {
           const accountData = await Storage.getItemAsync(key);
           return { key, data: accountData ? JSON.parse(accountData) : null };
-        })
+        }),
       );
 
       setAccounts(userAccounts);
@@ -97,7 +98,7 @@ export default function Index() {
   useFocusEffect(
     useCallback(() => {
       loadAccounts();
-    }, [loadAccounts])
+    }, [loadAccounts]),
   );
 
   /**
@@ -118,7 +119,7 @@ export default function Index() {
       const updatedKeys = accountKeys.filter((k) => k !== key);
       await Storage.setItemAsync(
         "userAccountKeys",
-        JSON.stringify(updatedKeys)
+        JSON.stringify(updatedKeys),
       );
 
       setAccountKeys(updatedKeys);
@@ -141,7 +142,7 @@ export default function Index() {
 
       await Storage.setItemAsync(key, JSON.stringify(updated));
       setAccounts((prev) =>
-        prev.map((acc) => (acc.key === key ? { ...acc, data: updated } : acc))
+        prev.map((acc) => (acc.key === key ? { ...acc, data: updated } : acc)),
       );
     } catch (err) {
       console.error("Error editing account:", err);
@@ -149,7 +150,7 @@ export default function Index() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#f8f9fa" }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* 🔥 Custom Header */}
       <View
         style={{
@@ -161,15 +162,29 @@ export default function Index() {
           paddingHorizontal: 20,
         }}
       >
-        <Text style={{ fontSize: 20, fontWeight: "600" }}>
-          AuthFactory
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Image
+            source={
+              themeMode === "dark"
+                ? require("../assets/images/appstore.png")
+                : require("../assets/images/invert-icon.png")
+            }
+            style={{ width: 26, height: 26, borderRadius: 8 }}
+          />
+          <Text
+            style={{
+              marginLeft: 5,
+              fontSize: 20,
+              fontWeight: "600",
+              color: colors.text,
+            }}
+          >
+            AuthFactory
+          </Text>
+        </View>
 
-        <Pressable
-          onPress={() => router.push("/settings")}
-          hitSlop={12}
-        >
-          <Ionicons name="settings-outline" size={24} color="#000" />
+        <Pressable onPress={() => router.push("/settings")} hitSlop={12}>
+          <Ionicons name="settings-outline" size={24} color={colors.text} />
         </Pressable>
       </View>
 
@@ -187,19 +202,19 @@ export default function Index() {
             style={{
               flexDirection: "row",
               alignItems: "center",
-              backgroundColor: "#e3f2fd",
+              backgroundColor: colors.background,
               padding: 12,
               borderRadius: 10,
               marginBottom: 16,
               borderLeftWidth: 4,
-              borderLeftColor: "#2196F3",
+              borderLeftColor: colors.border,
             }}
           >
-            <ActivityIndicator size="small" color="#1976D2" />
+            <ActivityIndicator size="small" color={colors.text} />
             <Text
               style={{
                 marginLeft: 10,
-                color: "#1565C0",
+                color: colors.text,
                 fontSize: 14,
                 fontWeight: "500",
               }}
@@ -216,8 +231,10 @@ export default function Index() {
             onEdit={editAccount}
           />
         ) : (
-          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <Text style={{ fontSize: 16, color: "#666" }}>
+          <View
+            style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+          >
+            <Text style={{ fontSize: 16, color: colors.text }}>
               No accounts yet
             </Text>
           </View>
@@ -226,7 +243,7 @@ export default function Index() {
         <Link href="/setup" asChild>
           <TouchableOpacity
             style={{
-              backgroundColor: "#000",
+              backgroundColor: colors.background,
               paddingVertical: 14,
               borderRadius: 12,
               marginTop: 20,
@@ -234,7 +251,9 @@ export default function Index() {
             }}
             activeOpacity={0.8}
           >
-            <Text style={{ color: "white", fontSize: 16, fontWeight: "500" }}>
+            <Text
+              style={{ color: colors.text, fontSize: 16, fontWeight: "500" }}
+            >
               + Add Account
             </Text>
           </TouchableOpacity>
