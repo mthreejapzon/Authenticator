@@ -34,7 +34,7 @@ export default function Index() {
     }[]
   >([]);
   const [isSyncing, setIsSyncing] = useState(false);
-  const { themeMode, setThemeMode, colors } = useTheme();
+  const { themeMode, colors } = useTheme();
 
   /**
    * 🔥 Disable native iOS / Android header completely

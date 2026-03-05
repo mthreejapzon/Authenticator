@@ -149,7 +149,7 @@ export async function decryptText(
       );
     }
 
-    const [version, ivB64, ctB64] = parts;
+    const [, ivB64, ctB64] = parts;
 
     if (!ivB64 || !ctB64) {
       throw new Error("Missing IV or ciphertext component");
@@ -274,7 +274,7 @@ export async function decryptWithMasterKey(
     try {
       const parsed = JSON.parse(cipher);
       cipher = parsed.cipher || cipher;
-    } catch (e) {
+    } catch {
       // If JSON parse fails, assume it's raw cipher
       console.log("Not JSON format, treating as raw cipher");
     }
@@ -298,7 +298,7 @@ export async function decryptWithMasterKey(
     );
   }
 
-  const [version, ivB64, ctB64] = parts;
+    const [, ivB64, ctB64] = parts;
   
   if (!ivB64 || !ctB64) {
     throw new Error("Malformed cipher text - missing IV or ciphertext");

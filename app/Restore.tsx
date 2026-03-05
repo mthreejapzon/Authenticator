@@ -167,7 +167,7 @@ export default function Restore() {
             Alert.alert("Error", "Backup JSON missing the 'cipher' field.");
             return;
           }
-        } catch (e) {
+        } catch {
           setLoading(false);
           Alert.alert("Error", "Failed to parse backup JSON.");
           return;

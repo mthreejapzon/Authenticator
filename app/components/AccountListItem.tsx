@@ -6,10 +6,7 @@ import Svg, { Path } from "react-native-svg";
 import { useTheme } from "../context/ThemeContext";
 import { getProviderIcon, type IconData } from "../utils/getProviderIcon";
 
-export default function AccountListItem({
-  account,
-  onDelete,
-}: {
+export default function AccountListItem(props: {
   account: {
     key: string;
     data: {
@@ -22,9 +19,10 @@ export default function AccountListItem({
   };
   onDelete: (key: string) => void;
 }) {
+  const { account } = props;
   const router = useRouter();
   const [isHovered, setIsHovered] = useState(false);
-  const { themeMode, setThemeMode, colors } = useTheme();
+  const { colors } = useTheme();
 
   if (!account.data) return null;
 

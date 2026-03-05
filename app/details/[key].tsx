@@ -68,7 +68,7 @@ export default function DetailsScreen() {
 
   const progress = useRef(new Animated.Value(1)).current;
   const highlightAnim = useRef(new Animated.Value(0)).current;
-  const [highlightField, setHighlightField] = useState<string | null>(null);
+  const [, setHighlightField] = useState<string | null>(null);
 
   const startProgressBar = (remainingSeconds: number) => {
     progress.stopAnimation();

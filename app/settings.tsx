@@ -1,10 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRouter } from "expo-router";
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   Platform,
   ScrollView,
   Switch,
@@ -53,19 +52,18 @@ export default function SettingsScreen() {
   const [gistId, setGistId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
   const [isWorking, setIsWorking] = useState(false);
-  const [lastBackup, setLastBackup] = useState<string | null>(null);
+  const [, setLastBackup] = useState<string | null>(null);
   const [history, setHistory] = useState<BackupHistoryItem[]>([]);
   const [isLoadingToken, setIsLoadingToken] = useState(true);
   const [autoRestoreEnabled, setAutoRestoreEnabled] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<string>("Idle");
-  const syncProgress = useRef(new Animated.Value(0)).current;
+  const [, setSyncStatus] = useState<string>("Idle");
   const [showPinSetup, setShowPinSetup] = useState(false);
   const [hasPinConfigured, setHasPinConfigured] = useState(false);
   const [isInitialSetup, setIsInitialSetup] = useState(false);
   const [showPinVerification, setShowPinVerification] = useState(false);
   const [isRemovingPin, setIsRemovingPin] = useState(false);
   const [showThemeOptions, setShowThemeOptions] = useState(false);
-  const { themeMode, resolvedTheme, setThemeMode, colors } = useTheme();
+  const { themeMode, setThemeMode, colors } = useTheme();
 
   // Hide default header and use custom header
   useLayoutEffect(() => {
@@ -508,7 +506,6 @@ export default function SettingsScreen() {
       await Storage.deleteItemAsync(BACKUP_HISTORY_KEY);
 
       // Delete PIN data
-      const { removePin } = await import("./utils/pinSecurity");
       try {
         // Force remove PIN without verification since we're clearing everything
         await Storage.deleteItemAsync("security_pin_hash");
@@ -1022,7 +1019,7 @@ export default function SettingsScreen() {
           const parsed = JSON.parse(rawContent);
           cipher = parsed.cipher;
           if (!cipher) throw new Error("Missing encrypted content");
-        } catch (e) {
+        } catch {
           throw new Error("Failed to parse backup JSON");
         }
       } else if (rawContent.startsWith("v2:")) {

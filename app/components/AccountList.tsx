@@ -2,11 +2,7 @@ import { SectionList, Text, View } from "react-native";
 import { useTheme } from "../context/ThemeContext";
 import AccountListItem from "./AccountListItem";
 
-export default function AccountList({
-  accounts,
-  onDelete,
-  onEdit,
-}: {
+export default function AccountList(props: {
   accounts: {
     key: string;
     data: {
@@ -20,11 +16,12 @@ export default function AccountList({
   onDelete: (key: string) => void;
   onEdit: (key: string, newName: string) => void;
 }) {
+  const { accounts, onDelete } = props;
   // Separate favorites from non-favorites
   const favoriteAccounts = accounts.filter((acc) => acc.data?.isFavorite);
   const regularAccounts = accounts.filter((acc) => !acc.data?.isFavorite);
 
-  const { themeMode, setThemeMode, colors } = useTheme();
+  const { colors } = useTheme();
 
   // Create sections
   const sections = [];
