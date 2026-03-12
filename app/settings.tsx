@@ -4,6 +4,7 @@ import React, { useEffect, useLayoutEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Platform,
   ScrollView,
   Switch,
@@ -1561,8 +1562,8 @@ export default function SettingsScreen() {
                 {themeMode === "light"
                   ? "Light"
                   : themeMode === "dark"
-                  ? "Dark"
-                  : "System"}
+                    ? "Dark"
+                    : "System"}
               </Text>
               <Ionicons
                 name={showThemeOptions ? "chevron-up" : "chevron-down"}
@@ -1871,23 +1872,19 @@ export default function SettingsScreen() {
 
         {/* Footer with App Version */}
         <View style={{ alignItems: "center", marginTop: 32, marginBottom: 40 }}>
-          <View
+          <Image
+            source={
+              themeMode === "dark"
+                ? require("../assets/images/appstore.png")
+                : require("../assets/images/invert-icon.png")
+            }
             style={{
               width: 48,
               height: 48,
-              backgroundColor: colors.primary,
               borderRadius: 16,
-              justifyContent: "center",
-              alignItems: "center",
               marginBottom: 16,
             }}
-          >
-            <Ionicons
-              name="shield-checkmark-outline"
-              size={24}
-              color={colors.background}
-            />
-          </View>
+          />
           <Text
             style={{ fontSize: 12, color: colors.subText, marginBottom: 4 }}
           >

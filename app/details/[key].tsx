@@ -65,6 +65,7 @@ export default function DetailsScreen() {
   const [decryptionError, setDecryptionError] = useState<string | null>(null);
   const [isFavorite, setIsFavorite] = useState<boolean>(false);
   const { colors } = useTheme();
+  const [otpCopied, setOtpCopied] = useState<boolean>(false);
 
   const progress = useRef(new Animated.Value(1)).current;
   const highlightAnim = useRef(new Animated.Value(0)).current;
@@ -79,6 +80,12 @@ export default function DetailsScreen() {
       easing: Easing.linear,
       useNativeDriver: false,
     }).start();
+  };
+
+  const handleOtpCopy = async () => {
+    await copyToClipboard(otpCode, "otp");
+    setOtpCopied(true);
+    setTimeout(() => setOtpCopied(false), 2000);
   };
 
   const triggerHighlight = (field: string) => {
@@ -365,7 +372,7 @@ export default function DetailsScreen() {
     try {
       const date = new Date(dateString);
       return date.toLocaleDateString("en-US", {
-        month: "numeric",
+        month: "short",
         day: "numeric",
         year: "numeric",
       });
@@ -622,18 +629,17 @@ export default function DetailsScreen() {
             </View>
           </View>
 
-          {/* OTP Card Section */}
           {data?.value &&
           otpCode !== "N/A" &&
           otpCode !== "Invalid OTP" &&
           otpCode !== "Generating..." ? (
-            <View
+            <TouchableOpacity
+              onPress={handleOtpCopy}
+              activeOpacity={0.8}
               style={{
-                borderWidth: 0.613,
-                borderColor: "#dbeafe",
                 borderRadius: 14,
                 padding: 24.609,
-                backgroundColor: colors.otpBackground,
+                backgroundColor: colors.input,
                 gap: 16,
               }}
             >
@@ -653,16 +659,14 @@ export default function DetailsScreen() {
                       width: 8,
                       height: 8,
                       borderRadius: 4,
-                      backgroundColor: colors.otpPrimary,
-                      opacity: 0.64,
+                      backgroundColor: otpCopied
+                        ? colors.otpPrimary
+                        : colors.text,
+                      opacity: otpCopied ? 1 : 0.64,
                     }}
                   />
                   <Text
-                    style={{
-                      fontSize: 14,
-                      color: colors.text,
-                      lineHeight: 20,
-                    }}
+                    style={{ fontSize: 14, color: colors.text, lineHeight: 20 }}
                   >
                     Authentication Code
                   </Text>
@@ -682,7 +686,7 @@ export default function DetailsScreen() {
                   <Text
                     style={{
                       fontSize: 12,
-                      color: "#1447e6",
+                      color: colors.text,
                       fontWeight: "500",
                       lineHeight: 16,
                     }}
@@ -704,7 +708,7 @@ export default function DetailsScreen() {
                 >
                   <Text
                     style={{
-                      fontSize: 48,
+                      fontSize: 35,
                       color: colors.otpPrimary,
                       lineHeight: 48,
                       letterSpacing: 4.8,
@@ -715,7 +719,7 @@ export default function DetailsScreen() {
                   </Text>
                   <Text
                     style={{
-                      fontSize: 48,
+                      fontSize: 35,
                       color: "#99a1af",
                       lineHeight: 48,
                       letterSpacing: 4.8,
@@ -745,36 +749,32 @@ export default function DetailsScreen() {
                   />
                 </View>
 
-                {/* Copy Code Button */}
-                <TouchableOpacity
-                  onPress={() => copyToClipboard(otpCode, "otp")}
-                  activeOpacity={0.8}
+                {/* Tap to copy / Copied indicator */}
+                <View
                   style={{
-                    height: 32,
-                    backgroundColor: colors.background,
-                    borderWidth: 0.613,
-                    borderColor: "#bedbff",
-                    borderRadius: 8,
                     flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "center",
-                    gap: 8,
+                    gap: 6,
                   }}
                 >
-                  <Ionicons name="copy-outline" size={16} color={colors.text} />
+                  <Ionicons
+                    name={otpCopied ? "checkmark-circle" : "copy-outline"}
+                    size={13}
+                    color={otpCopied ? colors.otpPrimary : colors.subText}
+                  />
                   <Text
                     style={{
-                      fontSize: 14,
-                      color: colors.text,
-                      fontWeight: "500",
-                      lineHeight: 20,
+                      fontSize: 12,
+                      color: otpCopied ? colors.otpPrimary : colors.subText,
+                      fontWeight: otpCopied ? "600" : "400",
                     }}
                   >
-                    Copy Code
+                    {otpCopied ? "Copied!" : "Tap to copy"}
                   </Text>
-                </TouchableOpacity>
+                </View>
               </View>
-            </View>
+            </TouchableOpacity>
           ) : null}
 
           {/* Fields Section */}
@@ -967,37 +967,39 @@ export default function DetailsScreen() {
             </View>
 
             {/* Notes Field */}
-            <View style={{ gap: 8 }}>
-              <Text
-                style={{
-                  fontSize: 14,
-                  color: colors.text,
-                  fontWeight: "500",
-                  lineHeight: 20,
-                }}
-              >
-                Notes
-              </Text>
-              <View
-                style={{
-                  minHeight: 44,
-                  backgroundColor: colors.input,
-                  borderRadius: 10,
-                  paddingHorizontal: 16,
-                  paddingVertical: 12,
-                }}
-              >
+            {notesText ? (
+              <View style={{ gap: 8 }}>
                 <Text
                   style={{
                     fontSize: 14,
                     color: colors.text,
+                    fontWeight: "500",
                     lineHeight: 20,
                   }}
                 >
-                  {notesText || ""}
+                  Notes
                 </Text>
+                <View
+                  style={{
+                    minHeight: 44,
+                    backgroundColor: colors.input,
+                    borderRadius: 10,
+                    paddingHorizontal: 16,
+                    paddingVertical: 12,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: colors.text,
+                      lineHeight: 20,
+                    }}
+                  >
+                    {notesText || ""}
+                  </Text>
+                </View>
               </View>
-            </View>
+            ) : null}
 
             {/* Created/Modified Dates */}
             {(data?.createdAt || data?.modifiedAt) && (
