@@ -13,6 +13,7 @@ export type CSVAccount = {
   secretKey: string;
   websiteUrl: string;
   notes: string;
+  isFavorite?: boolean;
 };
 
 export type CSVValidationResult = {
@@ -24,14 +25,17 @@ export type CSVValidationResult = {
 
 export type ImportMode = "merge" | "overwrite";
 
-// ─── Our canonical CSV headers (for export) ──────────────────────────────────
+// ─── Export headers — 1Password compatible format ────────────────────────────
 const CSV_HEADERS = [
-  "accountName",
-  "username",
-  "password",
-  "secretKey",
-  "websiteUrl",
-  "notes",
+  "Title",
+  "Url",
+  "Username",
+  "Password",
+  "OTPAuth",
+  "Favorite",
+  "Archived",
+  "Tags",
+  "Notes",
 ];
 
 // ─── Column aliases from popular password managers ───────────────────────────
@@ -78,12 +82,18 @@ const COLUMN_ALIASES: Record<string, string> = {
   login_uri: "websiteUrl",
   "web site": "websiteUrl",
 
+  // isFavorite
+  favorite: "isFavorite",
+
   // notes
   notes: "notes",
   note: "notes",
   comment: "notes",
   comments: "notes",
   extra: "notes",
+
+  // ignored 1Password columns (map to null-like via missing key = ignored)
+  // archived and tags are simply not mapped so they get skipped
 };
 
 // ─── Escape a single CSV cell value ──────────────────────────────────────────
@@ -126,10 +136,6 @@ const parseCSVRow = (row: string): string[] => {
 // ─── Resolve a raw header string to our internal field name ──────────────────
 const resolveHeader = (raw: string): string | null => {
   const normalized = raw.toLowerCase().trim();
-  // Direct match on our own headers
-  const direct = CSV_HEADERS.find((h) => h.toLowerCase() === normalized);
-  if (direct) return direct;
-  // Alias lookup
   return COLUMN_ALIASES[normalized] ?? null;
 };
 
@@ -153,20 +159,17 @@ export const validateCSV = (csvContent: string): CSVValidationResult => {
     };
   }
 
-  // Parse and resolve headers
   const rawHeaders = parseCSVRow(lines[0]);
   const resolvedHeaders = rawHeaders.map(resolveHeader);
 
-  // Check that at minimum accountName is resolvable
   if (!resolvedHeaders.includes("accountName")) {
     errors.push(
       `Could not find an account name column.\n` +
-        `Expected one of: title, name, accountName, service, issuer.\n` +
+        `Expected one of: Title, name, accountName, service, issuer.\n` +
         `Found columns: ${rawHeaders.join(", ")}`,
     );
   }
 
-  // Warn about unrecognised columns
   const unknownCols = rawHeaders.filter((_, i) => resolvedHeaders[i] === null);
   if (unknownCols.length > 0) {
     warnings.push(
@@ -183,7 +186,6 @@ export const validateCSV = (csvContent: string): CSVValidationResult => {
     return { isValid: true, errors, warnings, accounts };
   }
 
-  // Build a map: internalFieldName → column index (first match wins)
   const fieldIndex: Record<string, number> = {};
   resolvedHeaders.forEach((field, i) => {
     if (field && !(field in fieldIndex)) {
@@ -194,7 +196,6 @@ export const validateCSV = (csvContent: string): CSVValidationResult => {
   const get = (cells: string[], field: string): string =>
     field in fieldIndex ? (cells[fieldIndex[field]] ?? "").trim() : "";
 
-  // Parse data rows
   for (let i = 1; i < lines.length; i++) {
     const rowNum = i + 1;
     const cells = parseCSVRow(lines[i]);
@@ -211,13 +212,13 @@ export const validateCSV = (csvContent: string): CSVValidationResult => {
     const secretKey = get(cells, "secretKey");
     const websiteUrl = get(cells, "websiteUrl");
     const notes = get(cells, "notes");
+    const isFavorite = get(cells, "isFavorite") === "1";
 
     if (!accountName) {
       errors.push(`Row ${rowNum}: account name is empty, skipping`);
       continue;
     }
 
-    // Validate OTP secret format if provided
     if (secretKey && !secretKey.startsWith("otpauth://")) {
       const clean = secretKey.replace(/\s+/g, "").toUpperCase();
       if (!/^[A-Z2-7]+=*$/.test(clean)) {
@@ -240,13 +241,14 @@ export const validateCSV = (csvContent: string): CSVValidationResult => {
       secretKey,
       websiteUrl,
       notes,
+      isFavorite,
     });
   }
 
   return { isValid: errors.length === 0, errors, warnings, accounts };
 };
 
-// ─── Export accounts to CSV ───────────────────────────────────────────────────
+// ─── Export accounts to CSV (1Password compatible) ───────────────────────────
 export const exportAccountsToCSV = async (): Promise<{
   success: boolean;
   message: string;
@@ -295,12 +297,15 @@ export const exportAccountsToCSV = async (): Promise<{
 
       rows.push(
         [
-          escapeCSVCell(account.accountName || ""),
-          escapeCSVCell(account.username || ""),
-          escapeCSVCell(plainPassword),
-          escapeCSVCell(plainSecret),
-          escapeCSVCell(account.websiteUrl || ""),
-          escapeCSVCell(account.notes || ""),
+          escapeCSVCell(account.accountName || ""), // Title
+          escapeCSVCell(account.websiteUrl || ""), // Url
+          escapeCSVCell(account.username || ""), // Username
+          escapeCSVCell(plainPassword), // Password
+          escapeCSVCell(plainSecret), // OTPAuth
+          account.isFavorite ? "1" : "0", // Favorite
+          "0", // Archived
+          "", // Tags
+          escapeCSVCell(account.notes || ""), // Notes
         ].join(","),
       );
     }
@@ -435,7 +440,7 @@ export const importAccountsFromCSV = async (
           encrypted: !!pat,
           createdAt: now,
           modifiedAt: now,
-          isFavorite: false,
+          isFavorite: account.isFavorite ?? false,
         }),
       );
 
