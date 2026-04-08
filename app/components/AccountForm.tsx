@@ -21,6 +21,7 @@ import type { FormFields } from "../context/FormContext";
 import { useTheme } from "../context/ThemeContext";
 import { decryptText } from "../utils/crypto";
 import { Storage } from "../utils/storage";
+import PasswordStrengthIndicator from "./PasswordStrengthIndicator";
 
 export default function AccountForm({
   accountKey,
@@ -297,6 +298,7 @@ export default function AccountForm({
               />
             </Pressable>
           </View>
+          <PasswordStrengthIndicator password={password} />
         </Field>
 
         <Field label="Website URL" labelStyle={{ color: colors.text }}>
