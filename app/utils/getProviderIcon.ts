@@ -28,18 +28,22 @@ export function getProviderIcon(accountName: string): IconData {
   }
 
   const normalized = accountName.toLowerCase().trim();
-  
+
   // Try exact and fuzzy matching
   const iconKey = findIconKey(normalized);
-  
+
   if (iconKey) {
     const icon = (icons as any)[iconKey];
-    return {
-      type: "simple-icon",
-      value: icon,
-      color: `#${icon.hex}`,
-      name: accountName,
-    };
+
+    // ✅ Validate icon has the expected shape before using it
+    if (icon && icon.hex && icon.path) {
+      return {
+        type: "simple-icon",
+        value: icon,
+        color: `#${icon.hex}`,
+        name: accountName,
+      };
+    }
   }
 
   // Check for emoji patterns (optional fun feature)
@@ -53,11 +57,12 @@ export function getProviderIcon(accountName: string): IconData {
   }
 
   // Fallback to initials with color
-  const initials = accountName
-    .replace(/[^A-Za-z0-9]/g, "")
-    .substring(0, 2)
-    .toUpperCase() || "??";
-  
+  const initials =
+    accountName
+      .replace(/[^A-Za-z0-9]/g, "")
+      .substring(0, 2)
+      .toUpperCase() || "??";
+
   const color = generateColorFromString(accountName);
 
   return {
@@ -75,101 +80,101 @@ function findIconKey(normalized: string): string | null {
   // Direct mappings for popular services (handles variations)
   const mappings: Record<string, string> = {
     // Google ecosystem
-    "google": "siGoogle",
-    "gmail": "siGmail",
+    google: "siGoogle",
+    gmail: "siGmail",
     "google drive": "siGoogledrive",
     "google cloud": "siGooglecloud",
-    "youtube": "siYoutube",
-    
+    youtube: "siYoutube",
+
     // Microsoft
-    "microsoft": "siMicrosoft",
-    "outlook": "siMicrosoftoutlook",
-    "office": "siMicrosoftoffice",
-    "azure": "siMicrosoftazure",
-    "onedrive": "siOnedrive",
-    "teams": "siMicrosoftteams",
-    
+    microsoft: "siMicrosoft",
+    outlook: "siMicrosoftoutlook",
+    office: "siMicrosoftoffice",
+    azure: "siMicrosoftazure",
+    onedrive: "siOnedrive",
+    teams: "siMicrosoftteams",
+
     // Social
-    "facebook": "siFacebook",
-    "instagram": "siInstagram",
-    "twitter": "siTwitter",
-    "x": "siX",
-    "linkedin": "siLinkedin",
-    "tiktok": "siTiktok",
-    "snapchat": "siSnapchat",
-    "reddit": "siReddit",
-    "pinterest": "siPinterest",
-    "whatsapp": "siWhatsapp",
-    "telegram": "siTelegram",
-    "discord": "siDiscord",
-    "slack": "siSlack",
-    
+    facebook: "siFacebook",
+    instagram: "siInstagram",
+    twitter: "siTwitter",
+    x: "siX",
+    linkedin: "siLinkedin",
+    tiktok: "siTiktok",
+    snapchat: "siSnapchat",
+    reddit: "siReddit",
+    pinterest: "siPinterest",
+    whatsapp: "siWhatsapp",
+    telegram: "siTelegram",
+    discord: "siDiscord",
+    slack: "siSlack",
+
     // Development
-    "github": "siGithub",
-    "gitlab": "siGitlab",
-    "bitbucket": "siBitbucket",
-    "stackoverflow": "siStackoverflow",
-    "npm": "siNpm",
-    "docker": "siDocker",
-    "kubernetes": "siKubernetes",
-    "vercel": "siVercel",
-    "netlify": "siNetlify",
-    
+    github: "siGithub",
+    gitlab: "siGitlab",
+    bitbucket: "siBitbucket",
+    stackoverflow: "siStackoverflow",
+    npm: "siNpm",
+    docker: "siDocker",
+    kubernetes: "siKubernetes",
+    vercel: "siVercel",
+    netlify: "siNetlify",
+
     // Cloud & Storage
-    "amazon": "siAmazon",
-    "aws": "siAmazonaws",
-    "dropbox": "siDropbox",
-    "icloud": "siIcloud",
-    
+    amazon: "siAmazon",
+    aws: "siAmazonaws",
+    dropbox: "siDropbox",
+    icloud: "siIcloud",
+
     // Finance
-    "paypal": "siPaypal",
-    "stripe": "siStripe",
-    "coinbase": "siCoinbase",
-    "binance": "siBinance",
-    "revolut": "siRevolut",
-    
+    paypal: "siPaypal",
+    stripe: "siStripe",
+    coinbase: "siCoinbase",
+    binance: "siBinance",
+    revolut: "siRevolut",
+
     // Productivity
-    "notion": "siNotion",
-    "trello": "siTrello",
-    "asana": "siAsana",
-    "jira": "siJira",
-    "confluence": "siConfluence",
-    "evernote": "siEvernote",
-    
+    notion: "siNotion",
+    trello: "siTrello",
+    asana: "siAsana",
+    jira: "siJira",
+    confluence: "siConfluence",
+    evernote: "siEvernote",
+
     // Entertainment
-    "spotify": "siSpotify",
-    "netflix": "siNetflix",
-    "twitch": "siTwitch",
-    "steam": "siSteam",
-    "playstation": "siPlaystation",
-    "xbox": "siXbox",
-    "nintendo": "siNintendo",
-    
+    spotify: "siSpotify",
+    netflix: "siNetflix",
+    twitch: "siTwitch",
+    steam: "siSteam",
+    playstation: "siPlaystation",
+    xbox: "siXbox",
+    nintendo: "siNintendo",
+
     // E-commerce
-    "shopify": "siShopify",
-    "ebay": "siEbay",
-    "etsy": "siEtsy",
-    
+    shopify: "siShopify",
+    ebay: "siEbay",
+    etsy: "siEtsy",
+
     // Crypto
-    "metamask": "siMetamask",
-    "ethereum": "siEthereum",
-    "bitcoin": "siBitcoin",
-    
+    metamask: "siMetamask",
+    ethereum: "siEthereum",
+    bitcoin: "siBitcoin",
+
     // Apple
-    "apple": "siApple",
-    
+    apple: "siApple",
+
     // Adobe
-    "adobe": "siAdobe",
-    "photoshop": "siAdobephotoshop",
-    "illustrator": "siAdobeillustrator",
-    
+    adobe: "siAdobe",
+    photoshop: "siAdobephotoshop",
+    illustrator: "siAdobeillustrator",
+
     // Others
-    "zoom": "siZoom",
-    "figma": "siFigma",
-    "canva": "siCanva",
-    "mailchimp": "siMailchimp",
-    "wordpress": "siWordpress",
-    "medium": "siMedium",
+    zoom: "siZoom",
+    figma: "siFigma",
+    canva: "siCanva",
+    mailchimp: "siMailchimp",
+    wordpress: "siWordpress",
+    medium: "siMedium",
   };
 
   // Check direct mapping
@@ -187,7 +192,7 @@ function findIconKey(normalized: string): string | null {
   // Try simple-icons format directly
   const formatted = normalized.replace(/\s+/g, "");
   const iconKey = `si${formatted.charAt(0).toUpperCase()}${formatted.slice(1)}`;
-  
+
   if ((icons as any)[iconKey]) {
     return iconKey;
   }
@@ -200,20 +205,20 @@ function findIconKey(normalized: string): string | null {
  */
 function getEmojiForProvider(normalized: string): string | null {
   const emojiMap: Record<string, string> = {
-    "google": "🔍",
-    "email": "📧",
-    "mail": "📧",
-    "bank": "🏦",
-    "crypto": "₿",
-    "bitcoin": "₿",
-    "wallet": "💰",
-    "game": "🎮",
-    "shopping": "🛒",
-    "music": "🎵",
-    "video": "🎬",
-    "cloud": "☁️",
-    "server": "🖥️",
-    "vpn": "🔒",
+    google: "🔍",
+    email: "📧",
+    mail: "📧",
+    bank: "🏦",
+    crypto: "₿",
+    bitcoin: "₿",
+    wallet: "💰",
+    game: "🎮",
+    shopping: "🛒",
+    music: "🎵",
+    video: "🎬",
+    cloud: "☁️",
+    server: "🖥️",
+    vpn: "🔒",
   };
 
   for (const [key, emoji] of Object.entries(emojiMap)) {
@@ -293,8 +298,8 @@ export function getPopularProviders(): string[] {
 export function searchProviders(query: string): string[] {
   const popular = getPopularProviders();
   const normalized = query.toLowerCase();
-  
-  return popular.filter(provider =>
-    provider.toLowerCase().includes(normalized)
+
+  return popular.filter((provider) =>
+    provider.toLowerCase().includes(normalized),
   );
 }

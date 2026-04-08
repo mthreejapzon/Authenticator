@@ -65,6 +65,8 @@ export default function SettingsScreen() {
   const [isRemovingPin, setIsRemovingPin] = useState(false);
   const [showThemeOptions, setShowThemeOptions] = useState(false);
   const { themeMode, setThemeMode, colors } = useTheme();
+  const [csvWorking, setCsvWorking] = useState(false);
+  const [showImportOptions, setShowImportOptions] = useState(false);
 
   // Hide default header and use custom header
   useLayoutEffect(() => {
@@ -1067,6 +1069,33 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleExportCSV = async () => {
+    setCsvWorking(true);
+    const { exportAccountsToCSV } = await import("./utils/csvUtils");
+    const result = await exportAccountsToCSV();
+    setCsvWorking(false);
+    if (!result.success) Alert.alert("Export Failed", result.message);
+  };
+
+  const handleImportCSV = async (mode: "merge" | "overwrite") => {
+    setShowImportOptions(false);
+    setCsvWorking(true);
+    const { importAccountsFromCSV } = await import("./utils/csvUtils");
+    const result = await importAccountsFromCSV(mode);
+    setCsvWorking(false);
+
+    if (!result.success) {
+      Alert.alert("Import Failed", result.message);
+      return;
+    }
+
+    let message = result.message;
+    if (result.validation?.warnings.length) {
+      message += `\n\nWarnings:\n${result.validation.warnings.join("\n")}`;
+    }
+    Alert.alert("Import Complete", message);
+  };
+
   if (isLoadingToken) {
     return (
       <View
@@ -1778,6 +1807,7 @@ export default function SettingsScreen() {
           >
             Data Management
           </Text>
+
           <View style={{ gap: 8 }}>
             {/* Export Vault */}
             <TouchableOpacity
@@ -1867,6 +1897,176 @@ export default function SettingsScreen() {
                 Clear All Data
               </Text>
             </TouchableOpacity>
+
+            <Text
+              style={{
+                marginTop: 32,
+                fontSize: 14,
+                fontWeight: "500",
+                color: colors.text,
+                marginBottom: 16,
+              }}
+            >
+              CSV Import/Export
+            </Text>
+
+            {/* Export CSV */}
+            <TouchableOpacity
+              onPress={handleExportCSV}
+              disabled={csvWorking}
+              style={{
+                backgroundColor: colors.background,
+                borderWidth: 0.6,
+                borderColor: colors.border,
+                height: 44,
+                borderRadius: 8,
+                flexDirection: "row",
+                alignItems: "center",
+                paddingHorizontal: 12,
+              }}
+            >
+              <Ionicons
+                name="document-text-outline"
+                size={16}
+                color={colors.text}
+              />
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: 14,
+                  fontWeight: "500",
+                  marginLeft: 12,
+                  opacity: csvWorking ? 0.5 : 1,
+                }}
+              >
+                Export as CSV
+              </Text>
+            </TouchableOpacity>
+
+            {/* Import CSV */}
+            <TouchableOpacity
+              onPress={() => setShowImportOptions(true)}
+              disabled={csvWorking}
+              style={{
+                backgroundColor: colors.background,
+                borderWidth: 0.6,
+                borderColor: colors.border,
+                height: 44,
+                borderRadius: 8,
+                flexDirection: "row",
+                alignItems: "center",
+                paddingHorizontal: 12,
+              }}
+            >
+              <Ionicons
+                name="document-attach-outline"
+                size={16}
+                color={colors.text}
+              />
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: 14,
+                  fontWeight: "500",
+                  marginLeft: 12,
+                  opacity: csvWorking ? 0.5 : 1,
+                }}
+              >
+                Import from CSV
+              </Text>
+            </TouchableOpacity>
+
+            {/* Import Mode Picker */}
+            {showImportOptions && (
+              <View
+                style={{
+                  borderRadius: 8,
+                  borderWidth: 0.6,
+                  borderColor: colors.border,
+                  backgroundColor: colors.card,
+                  overflow: "hidden",
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: colors.subText,
+                    padding: 12,
+                    paddingBottom: 8,
+                  }}
+                >
+                  How should existing accounts be handled?
+                </Text>
+                <TouchableOpacity
+                  onPress={() => handleImportCSV("merge")}
+                  style={{ paddingVertical: 10, paddingHorizontal: 12 }}
+                >
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontSize: 14,
+                      fontWeight: "500",
+                    }}
+                  >
+                    Merge — Add to existing
+                  </Text>
+                  <Text
+                    style={{
+                      color: colors.subText,
+                      fontSize: 12,
+                      marginTop: 2,
+                    }}
+                  >
+                    Keep current accounts and add new ones
+                  </Text>
+                </TouchableOpacity>
+                <View
+                  style={{
+                    height: 1,
+                    backgroundColor: colors.border,
+                    opacity: 0.5,
+                  }}
+                />
+                <TouchableOpacity
+                  onPress={() => handleImportCSV("overwrite")}
+                  style={{ paddingVertical: 10, paddingHorizontal: 12 }}
+                >
+                  <Text
+                    style={{
+                      color: colors.danger,
+                      fontSize: 14,
+                      fontWeight: "500",
+                    }}
+                  >
+                    Overwrite — Replace all
+                  </Text>
+                  <Text
+                    style={{
+                      color: colors.subText,
+                      fontSize: 12,
+                      marginTop: 2,
+                    }}
+                  >
+                    Delete all current accounts and import fresh
+                  </Text>
+                </TouchableOpacity>
+                <View
+                  style={{
+                    height: 1,
+                    backgroundColor: colors.border,
+                    opacity: 0.5,
+                  }}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowImportOptions(false)}
+                  style={{ paddingVertical: 10, paddingHorizontal: 12 }}
+                >
+                  <Text style={{ color: colors.subText, fontSize: 14 }}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
 
