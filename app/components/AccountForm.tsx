@@ -21,6 +21,7 @@ import type { FormFields } from "../context/FormContext";
 import { useTheme } from "../context/ThemeContext";
 import { decryptText } from "../utils/crypto";
 import { Storage } from "../utils/storage";
+import PasswordGeneratorSheet from "./PasswordGeneratorSheet";
 import PasswordStrengthIndicator from "./PasswordStrengthIndicator";
 
 export default function AccountForm({
@@ -60,7 +61,7 @@ export default function AccountForm({
   const [, setMissingFields] = useState<string[]>([]);
   const [hasToken, setHasToken] = useState(false);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(!!secretKey?.trim());
-
+  const [showGenerator, setShowGenerator] = useState(false);
   /**
    * 🔒 Disable native navigation bar completely
    */
@@ -297,9 +298,20 @@ export default function AccountForm({
                 color={colors.text}
               />
             </Pressable>
+            {/* Generator trigger */}
+            <Pressable onPress={() => setShowGenerator(true)}>
+              <Ionicons name="key-outline" size={20} color={colors.text} />
+            </Pressable>
           </View>
           <PasswordStrengthIndicator password={password} />
         </Field>
+
+        {/* Password Generator Sheet */}
+        <PasswordGeneratorSheet
+          visible={showGenerator}
+          onClose={() => setShowGenerator(false)}
+          onUse={(generated) => handleChange("password", generated)}
+        />
 
         <Field label="Website URL" labelStyle={{ color: colors.text }}>
           <TextInput
