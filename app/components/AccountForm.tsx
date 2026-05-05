@@ -17,7 +17,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { FormFields } from "../context/FormContext";
+import type { CustomField, FormFields } from "../context/FormContext";
 import { useTheme } from "../context/ThemeContext";
 import { decryptText } from "../utils/crypto";
 import { Storage } from "../utils/storage";
@@ -33,6 +33,7 @@ export default function AccountForm({
   accountOtp,
   secretKey,
   notes,
+  customFields,
   setFormData,
   resetForm,
   referer,
@@ -45,6 +46,7 @@ export default function AccountForm({
   accountOtp?: string;
   secretKey: string;
   notes: string;
+  customFields: CustomField[];
   setFormData: (data: Partial<FormFields>) => void;
   resetForm: () => void;
   referer?: RelativePathString;
@@ -62,6 +64,7 @@ export default function AccountForm({
   const [hasToken, setHasToken] = useState(false);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(!!secretKey?.trim());
   const [showGenerator, setShowGenerator] = useState(false);
+
   /**
    * 🔒 Disable native navigation bar completely
    */
@@ -89,7 +92,7 @@ export default function AccountForm({
   }, [accountKey]);
 
   /**
-   * Decrypt password in edit mode
+   * Decrypt password + restore customFields in edit mode
    */
   useEffect(() => {
     if (!accountKey || !password) return;
@@ -145,15 +148,29 @@ export default function AccountForm({
       let finalPassword = password.trim();
       let finalOtp = otpValue;
 
+      // Encrypt custom field values if token exists
+      let finalCustomFields = customFields.filter((f) => f.label.trim());
+
       if (encrypted) {
         const { encryptText } = await import("../utils/crypto");
         finalPassword = await encryptText(finalPassword, pat!);
         if (finalOtp) finalOtp = await encryptText(finalOtp, pat!);
+
+        finalCustomFields = await Promise.all(
+          finalCustomFields.map(async (field) => ({
+            label: field.label.trim(),
+            value: field.value ? await encryptText(field.value, pat!) : "",
+          })),
+        );
+      } else {
+        finalCustomFields = finalCustomFields.map((f) => ({
+          label: f.label.trim(),
+          value: f.value,
+        }));
       }
 
       const now = new Date().toISOString();
       const stored = accountKey ? await Storage.getItemAsync(accountKey) : null;
-
       const existing = stored ? JSON.parse(stored) : {};
 
       const data = {
@@ -163,6 +180,7 @@ export default function AccountForm({
         websiteUrl: websiteUrl.trim(),
         value: finalOtp,
         notes: notes.trim(),
+        customFields: finalCustomFields,
         encrypted,
         createdAt: existing.createdAt || now,
         modifiedAt: now,
@@ -194,6 +212,7 @@ export default function AccountForm({
     websiteUrl,
     secretKey,
     notes,
+    customFields,
     accountKey,
     twoFactorEnabled,
     referer,
@@ -211,6 +230,27 @@ export default function AccountForm({
     if (!value) {
       setFormData({ secretKey: "" });
     }
+  };
+
+  /* ── Custom field handlers ── */
+
+  const handleAddCustomField = () => {
+    setFormData({ customFields: [...customFields, { label: "", value: "" }] });
+  };
+
+  const handleRemoveCustomField = (index: number) => {
+    setFormData({ customFields: customFields.filter((_, i) => i !== index) });
+  };
+
+  const handleCustomFieldChange = (
+    index: number,
+    key: "label" | "value",
+    text: string,
+  ) => {
+    const updated = customFields.map((field, i) =>
+      i === index ? { ...field, [key]: text } : field,
+    );
+    setFormData({ customFields: updated });
   };
 
   return (
@@ -298,7 +338,6 @@ export default function AccountForm({
                 color={colors.text}
               />
             </Pressable>
-            {/* Generator trigger */}
             <Pressable onPress={() => setShowGenerator(true)}>
               <Ionicons name="key-outline" size={20} color={colors.text} />
             </Pressable>
@@ -331,6 +370,72 @@ export default function AccountForm({
             style={[styles.input, { height: 90 }]}
           />
         </Field>
+
+        {/* ── Custom Fields ── */}
+        <View style={styles.customFieldsSection}>
+          <View style={styles.customFieldsHeader}>
+            <Text style={styles.customFieldsTitle}>Custom Fields</Text>
+            <Pressable
+              onPress={handleAddCustomField}
+              style={styles.addFieldButton}
+            >
+              <Ionicons name="add-outline" size={16} color={colors.text} />
+              <Text style={styles.addFieldText}>Add Field</Text>
+            </Pressable>
+          </View>
+
+          {customFields.length === 0 ? (
+            <View style={styles.emptyCustomFields}>
+              <Ionicons
+                name="create-outline"
+                size={20}
+                color={colors.subText}
+              />
+              <Text style={styles.emptyCustomFieldsText}>
+                No custom fields yet. Tap "Add Field" to store anything extra.
+              </Text>
+            </View>
+          ) : (
+            customFields.map((field, index) => (
+              <View key={index} style={styles.customFieldCard}>
+                {/* Label row */}
+                <View style={styles.customFieldLabelRow}>
+                  <TextInput
+                    value={field.label}
+                    onChangeText={(t) =>
+                      handleCustomFieldChange(index, "label", t)
+                    }
+                    placeholder="Field name (e.g. PIN, Recovery Email)"
+                    placeholderTextColor={colors.subText}
+                    style={styles.customFieldLabelInput}
+                  />
+                  <Pressable
+                    onPress={() => handleRemoveCustomField(index)}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name="close-circle-outline"
+                      size={22}
+                      color={colors.danger ?? "#ef4444"}
+                    />
+                  </Pressable>
+                </View>
+
+                {/* Value row */}
+                <TextInput
+                  value={field.value}
+                  onChangeText={(t) =>
+                    handleCustomFieldChange(index, "value", t)
+                  }
+                  placeholder="Value"
+                  placeholderTextColor={colors.subText}
+                  style={styles.customFieldValueInput}
+                  autoCapitalize="none"
+                />
+              </View>
+            ))
+          )}
+        </View>
 
         <View style={styles.divider} />
 
@@ -482,7 +587,93 @@ const createStyles = (colors: any) =>
       fontSize: 13,
       color: colors.danger,
     },
-    // Two-Factor Authentication styles
+    // ── Custom Fields ──
+    customFieldsSection: {
+      marginTop: 8,
+      marginBottom: 8,
+    },
+    customFieldsHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 10,
+    },
+    customFieldsTitle: {
+      fontWeight: "600",
+      fontSize: 15,
+      color: colors.text,
+    },
+    addFieldButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      backgroundColor: colors.card,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    addFieldText: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    emptyCustomFields: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingVertical: 14,
+      paddingHorizontal: 12,
+      backgroundColor: colors.card,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderStyle: "dashed",
+    },
+    emptyCustomFieldsText: {
+      flex: 1,
+      fontSize: 13,
+      color: colors.subText,
+      lineHeight: 18,
+    },
+    customFieldCard: {
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      backgroundColor: colors.card,
+      padding: 10,
+      gap: 8,
+    },
+    customFieldLabelRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    customFieldLabelInput: {
+      flex: 1,
+      height: 38,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 10,
+      backgroundColor: colors.background,
+      color: colors.text,
+      fontSize: 13,
+      fontWeight: "600",
+    },
+    customFieldValueInput: {
+      height: 38,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 10,
+      backgroundColor: colors.background,
+      color: colors.text,
+      fontSize: 14,
+    },
+    // ── Two-Factor Authentication ──
     twoFactorCard: {
       borderWidth: 1,
       borderColor: colors.border,

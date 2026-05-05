@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import AccountForm from "./components/AccountForm";
 import { useForm } from "./context/FormContext";
 
-
 export default function SetupScreen() {
   const {
     accountName,
@@ -11,6 +10,7 @@ export default function SetupScreen() {
     websiteUrl,
     secretKey,
     notes,
+    customFields,
     setFormData,
     resetForm,
   } = useForm();
@@ -19,18 +19,18 @@ export default function SetupScreen() {
     resetForm(); // clear on mount
     return () => resetForm(); // clear on unmount too
   }, []);
-  
 
   return (
-    <AccountForm 
-      accountName={accountName} 
-      username={username} 
-      password={password} 
+    <AccountForm
+      accountName={accountName}
+      username={username}
+      password={password}
       websiteUrl={websiteUrl}
-      secretKey={secretKey} 
-      notes={notes} 
-      setFormData={setFormData} 
-      resetForm={resetForm} 
+      secretKey={secretKey}
+      notes={notes}
+      customFields={customFields}
+      setFormData={setFormData}
+      resetForm={resetForm}
     />
-  );  
+  );
 }

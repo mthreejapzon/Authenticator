@@ -121,9 +121,15 @@ export const Clipboard = {
           textarea.style.position = 'fixed';
           textarea.style.opacity = '0';
           document.body.appendChild(textarea);
-          textarea.select();
-          document.execCommand('copy');
-          document.body.removeChild(textarea);
+          try {
+            textarea.select();
+            // `document.execCommand('copy')` is deprecated in TypeScript lib.dom,
+            // but it can still work in older browsers that lack `navigator.clipboard`.
+            // Cast to `any` to avoid the deprecation diagnostic while preserving behavior.
+            (document as any).execCommand?.('copy');
+          } finally {
+            document.body.removeChild(textarea);
+          }
         }
       } else {
         // Native mobile - import dynamically to avoid bundling issues

@@ -22,7 +22,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import * as icons from "simple-icons";
 import AccountForm from "../components/AccountForm";
-import { useForm } from "../context/FormContext";
+import { CustomField, useForm } from "../context/FormContext";
 import { useTheme } from "../context/ThemeContext";
 import { decryptText } from "../utils/crypto";
 import { Clipboard, Storage } from "../utils/storage";
@@ -39,6 +39,7 @@ export default function DetailsScreen() {
     websiteUrl,
     secretKey,
     notes,
+    customFields,
     setFormData,
     resetForm,
   } = useForm();
@@ -50,6 +51,7 @@ export default function DetailsScreen() {
     secretKey: string;
     value: string;
     websiteUrl?: string;
+    customFields?: CustomField[];
     createdAt?: string;
     modifiedAt?: string;
     isFavorite?: boolean;
@@ -66,6 +68,7 @@ export default function DetailsScreen() {
   const [isFavorite, setIsFavorite] = useState<boolean>(false);
   const { colors } = useTheme();
   const [otpCopied, setOtpCopied] = useState<boolean>(false);
+  const [customFieldsData, setCustomFieldsData] = useState<CustomField[]>([]);
 
   const progress = useRef(new Animated.Value(1)).current;
   const highlightAnim = useRef(new Animated.Value(0)).current;
@@ -204,6 +207,21 @@ export default function DetailsScreen() {
           }
         }
 
+        // Decrypt custom fields
+        let decryptedCustomFields: CustomField[] = [];
+        if (Array.isArray(parsed.customFields)) {
+          decryptedCustomFields = await Promise.all(
+            parsed.customFields.map(async (field: CustomField) => ({
+              label: field.label,
+              value:
+                isEncrypted && pat && field.value
+                  ? await decryptText(field.value, pat).catch(() => field.value)
+                  : (field.value ?? ""),
+            })),
+          );
+        }
+        setCustomFieldsData(decryptedCustomFields);
+
         // Set favorite status
         setIsFavorite(parsed.isFavorite || false);
 
@@ -218,8 +236,10 @@ export default function DetailsScreen() {
 
         setData(accountData);
         setFormData(parsed);
+        setFormData({ customFields: decryptedCustomFields });
         setNotesText(parsed.notes || "");
         setDecryptedPassword(decryptedPw);
+        setCustomFieldsData(decryptedCustomFields);
 
         // Generate OTP if we have a secret
         if (decryptedOtpValue) {
@@ -418,6 +438,7 @@ export default function DetailsScreen() {
         websiteUrl={websiteUrl}
         accountOtp={data?.value}
         secretKey={secretKey}
+        customFields={customFields}
         notes={notes}
         setFormData={setFormData}
         resetForm={resetForm}
@@ -779,6 +800,66 @@ export default function DetailsScreen() {
 
           {/* Fields Section */}
           <View style={{ gap: 16 }}>
+            {/* Username Field */}
+            <View style={{ gap: 8 }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: colors.text,
+                  fontWeight: "500",
+                  lineHeight: 20,
+                }}
+              >
+                Username
+              </Text>
+              <View
+                style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
+              >
+                <View
+                  style={{
+                    flex: 1,
+                    height: 44,
+                    backgroundColor: colors.input,
+                    borderRadius: 10,
+                    paddingHorizontal: 16,
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: colors.text,
+                      lineHeight: 20,
+                    }}
+                  >
+                    {data?.username || "N/A"}
+                  </Text>
+                </View>
+                {data?.username && (
+                  <TouchableOpacity
+                    onPress={() => copyToClipboard(data.username, "username")}
+                    activeOpacity={0.8}
+                    style={{
+                      width: 48,
+                      height: 44,
+                      backgroundColor: colors.input,
+                      borderWidth: 0.613,
+                      borderColor: "rgba(0,0,0,0.1)",
+                      borderRadius: 8,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons
+                      name="copy-outline"
+                      size={20}
+                      color={colors.text}
+                    />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+            {/* Custom Fields */}
             {/* Password Field */}
             <View style={{ gap: 8 }}>
               <Text
@@ -906,66 +987,6 @@ export default function DetailsScreen() {
               </View>
             )}
 
-            {/* Username Field */}
-            <View style={{ gap: 8 }}>
-              <Text
-                style={{
-                  fontSize: 14,
-                  color: colors.text,
-                  fontWeight: "500",
-                  lineHeight: 20,
-                }}
-              >
-                Username
-              </Text>
-              <View
-                style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
-              >
-                <View
-                  style={{
-                    flex: 1,
-                    height: 44,
-                    backgroundColor: colors.input,
-                    borderRadius: 10,
-                    paddingHorizontal: 16,
-                    justifyContent: "center",
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      color: colors.text,
-                      lineHeight: 20,
-                    }}
-                  >
-                    {data?.username || "N/A"}
-                  </Text>
-                </View>
-                {data?.username && (
-                  <TouchableOpacity
-                    onPress={() => copyToClipboard(data.username, "username")}
-                    activeOpacity={0.8}
-                    style={{
-                      width: 48,
-                      height: 44,
-                      backgroundColor: colors.input,
-                      borderWidth: 0.613,
-                      borderColor: "rgba(0,0,0,0.1)",
-                      borderRadius: 8,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Ionicons
-                      name="copy-outline"
-                      size={20}
-                      color={colors.text}
-                    />
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-
             {/* Notes Field */}
             {notesText ? (
               <View style={{ gap: 8 }}>
@@ -1000,6 +1021,96 @@ export default function DetailsScreen() {
                 </View>
               </View>
             ) : null}
+
+            {/* Custom Fields */}
+            {customFieldsData.length > 0 && (
+              <View style={{ gap: 12 }}>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    color: colors.text,
+                    fontWeight: "500",
+                    lineHeight: 20,
+                  }}
+                >
+                  Custom Fields
+                </Text>
+
+                {customFieldsData.map((field, index) => (
+                  <View key={index} style={{ gap: 6 }}>
+                    {/* Field label */}
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: colors.subText,
+                        fontWeight: "500",
+                        lineHeight: 16,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      {field.label}
+                    </Text>
+
+                    {/* Field value + copy button */}
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        gap: 8,
+                        alignItems: "center",
+                      }}
+                    >
+                      <View
+                        style={{
+                          flex: 1,
+                          minHeight: 44,
+                          backgroundColor: colors.input,
+                          borderRadius: 10,
+                          paddingHorizontal: 16,
+                          paddingVertical: 12,
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            color: colors.text,
+                            lineHeight: 20,
+                          }}
+                        >
+                          {field.value || "—"}
+                        </Text>
+                      </View>
+
+                      {field.value ? (
+                        <TouchableOpacity
+                          onPress={() =>
+                            copyToClipboard(field.value, `custom_${index}`)
+                          }
+                          activeOpacity={0.8}
+                          style={{
+                            width: 48,
+                            height: 44,
+                            backgroundColor: colors.input,
+                            borderWidth: 0.613,
+                            borderColor: "rgba(0,0,0,0.1)",
+                            borderRadius: 8,
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Ionicons
+                            name="copy-outline"
+                            size={20}
+                            color={colors.text}
+                          />
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
 
             {/* Created/Modified Dates */}
             {(data?.createdAt || data?.modifiedAt) && (

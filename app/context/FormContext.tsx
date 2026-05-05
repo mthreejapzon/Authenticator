@@ -1,5 +1,10 @@
 import React, { createContext, useContext, useState } from "react";
 
+export type CustomField = {
+  label: string;
+  value: string;
+};
+
 export type FormFields = {
   accountName: string;
   username: string;
@@ -7,6 +12,7 @@ export type FormFields = {
   websiteUrl: string;
   secretKey: string;
   notes: string;
+  customFields: CustomField[];
 };
 
 type FormContextType = FormFields & {
@@ -16,28 +22,25 @@ type FormContextType = FormFields & {
 
 const FormContext = createContext<FormContextType | undefined>(undefined);
 
-export const FormProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [formData, setFormDataState] = useState<FormFields>({
-    accountName: "",
-    username: "",
-    password: "",
-    websiteUrl: "",
-    secretKey: "",
-    notes: "",
-  });
+const initialState: FormFields = {
+  accountName: "",
+  username: "",
+  password: "",
+  websiteUrl: "",
+  secretKey: "",
+  notes: "",
+  customFields: [],
+};
+
+export const FormProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const [formData, setFormDataState] = useState<FormFields>(initialState);
 
   const setFormData = (data: Partial<FormFields>) =>
     setFormDataState((prev) => ({ ...prev, ...data }));
 
-  const resetForm = () =>
-    setFormDataState({
-      accountName: "",
-      username: "",
-      password: "",
-      websiteUrl: "",
-      secretKey: "",
-      notes: "",
-    });
+  const resetForm = () => setFormDataState(initialState);
 
   return (
     <FormContext.Provider value={{ ...formData, setFormData, resetForm }}>
