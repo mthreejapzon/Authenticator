@@ -13,6 +13,7 @@ export type FormFields = {
   secretKey: string;
   notes: string;
   customFields: CustomField[];
+  tags: string[];
 };
 
 type FormContextType = FormFields & {
@@ -30,6 +31,7 @@ const initialState: FormFields = {
   secretKey: "",
   notes: "",
   customFields: [],
+  tags: [],
 };
 
 export const FormProvider: React.FC<{ children: React.ReactNode }> = ({

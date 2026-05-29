@@ -1,7 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { RelativePathString, useNavigation, useRouter } from "expo-router";
 import * as OTPAuth from "otpauth";
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { TextStyle } from "react-native";
 import {
   Alert,
@@ -34,6 +40,7 @@ export default function AccountForm({
   secretKey,
   notes,
   customFields,
+  tags = [],
   setFormData,
   resetForm,
   referer,
@@ -47,6 +54,7 @@ export default function AccountForm({
   secretKey: string;
   notes: string;
   customFields: CustomField[];
+  tags: string[];
   setFormData: (data: Partial<FormFields>) => void;
   resetForm: () => void;
   referer?: RelativePathString;
@@ -64,6 +72,30 @@ export default function AccountForm({
   const [hasToken, setHasToken] = useState(false);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(!!secretKey?.trim());
   const [showGenerator, setShowGenerator] = useState(false);
+  const [showTagsModal, setShowTagsModal] = useState(false);
+  // ── Tag input state ──
+  const [tagInput, setTagInput] = useState("");
+  const tagInputRef = useRef<TextInput>(null);
+  const [allTags, setAllTags] = useState<string[]>([]);
+
+  // Load globally saved tags
+  useEffect(() => {
+    (async () => {
+      const stored = await Storage.getItemAsync("allTags");
+      if (stored) setAllTags(JSON.parse(stored));
+    })();
+  }, []);
+
+  // Save a new tag to global list
+  const saveTagGlobally = async (tag: string) => {
+    const stored = await Storage.getItemAsync("allTags");
+    const existing: string[] = stored ? JSON.parse(stored) : [];
+    if (!existing.some((t) => t.toLowerCase() === tag.toLowerCase())) {
+      const updated = [...existing, tag];
+      await Storage.setItemAsync("allTags", JSON.stringify(updated));
+      setAllTags(updated);
+    }
+  };
 
   /**
    * 🔒 Disable native navigation bar completely
@@ -181,6 +213,7 @@ export default function AccountForm({
         value: finalOtp,
         notes: notes.trim(),
         customFields: finalCustomFields,
+        tags: [...new Set(tags.map((t) => t.trim()).filter(Boolean))],
         encrypted,
         createdAt: existing.createdAt || now,
         modifiedAt: now,
@@ -213,6 +246,7 @@ export default function AccountForm({
     secretKey,
     notes,
     customFields,
+    tags,
     accountKey,
     twoFactorEnabled,
     referer,
@@ -230,6 +264,27 @@ export default function AccountForm({
     if (!value) {
       setFormData({ secretKey: "" });
     }
+  };
+
+  /* ── Tag handlers ── */
+
+  /** Commit the current tagInput as a new tag (ignore duplicates / blanks) */
+  const handleAddTag = async () => {
+    const trimmed = tagInput.trim();
+    if (!trimmed) return;
+    const alreadyExists = tags.some(
+      (t) => t.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (!alreadyExists) {
+      setFormData({ tags: [...tags, trimmed] });
+      await saveTagGlobally(trimmed); // ← persist globally
+    }
+    setTagInput("");
+  };
+
+  /** Remove a tag by index */
+  const handleRemoveTag = (index: number) => {
+    setFormData({ tags: tags.filter((_, i) => i !== index) });
   };
 
   /* ── Custom field handlers ── */
@@ -370,6 +425,127 @@ export default function AccountForm({
             style={[styles.input, { height: 90 }]}
           />
         </Field>
+
+        {/* ── Tags ── */}
+        <View style={styles.tagsSection}>
+          <View style={styles.tagsHeader}>
+            <Text style={styles.tagsSectionTitle}>Tags</Text>
+          </View>
+
+          {/* Chips row */}
+          {tags.length > 0 && (
+            <View style={styles.chipsRow}>
+              {tags.map((tag, index) => (
+                <View key={index} style={styles.chip}>
+                  <Text style={styles.chipText}>{tag}</Text>
+                  <Pressable
+                    onPress={() => handleRemoveTag(index)}
+                    hitSlop={6}
+                    style={styles.chipRemove}
+                  >
+                    <Ionicons
+                      name="close"
+                      size={12}
+                      color={colors.tagChipText ?? colors.text}
+                    />
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Input row */}
+          <View style={styles.tagInputRow}>
+            <TextInput
+              ref={tagInputRef}
+              value={tagInput}
+              onChangeText={setTagInput}
+              onSubmitEditing={handleAddTag}
+              blurOnSubmit={false}
+              placeholder='e.g. "Work", "Personal"'
+              placeholderTextColor={colors.subText}
+              returnKeyType="done"
+              style={styles.tagInput}
+              autoCapitalize="words"
+            />
+            <Pressable
+              onPress={handleAddTag}
+              style={[
+                styles.tagAddButton,
+                !tagInput.trim() && styles.tagAddButtonDisabled,
+              ]}
+              disabled={!tagInput.trim()}
+            >
+              <Ionicons
+                name="add"
+                size={18}
+                color={tagInput.trim() ? colors.text : colors.subText}
+              />
+            </Pressable>
+          </View>
+
+          {/* Suggestions: global tags not yet applied to this account */}
+          {allTags.filter(
+            (t) =>
+              !tags.some(
+                (selected) => selected.toLowerCase() === t.toLowerCase(),
+              ),
+          ).length > 0 && (
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontSize: 12, color: colors.subText }}>
+                Suggestions
+              </Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {allTags
+                  .filter(
+                    (t) =>
+                      !tags.some(
+                        (selected) =>
+                          selected.toLowerCase() === t.toLowerCase(),
+                      ),
+                  )
+                  .map((tag) => (
+                    <Pressable
+                      key={tag}
+                      onPress={() => {
+                        setFormData({ tags: [...tags, tag] });
+                      }}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                        borderRadius: 20,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        borderStyle: "dashed",
+                        backgroundColor: colors.background,
+                      }}
+                    >
+                      <Ionicons name="add" size={12} color={colors.subText} />
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "600",
+                          color: colors.subText,
+                        }}
+                      >
+                        {tag}
+                      </Text>
+                    </Pressable>
+                  ))}
+              </View>
+            </View>
+          )}
+
+          {tags.length === 0 && (
+            <Text style={styles.tagsEmptyHint}>
+              Tags help you filter and group accounts (e.g. Work, Personal,
+              Finance).
+            </Text>
+          )}
+        </View>
 
         {/* ── Custom Fields ── */}
         <View style={styles.customFieldsSection}>
@@ -587,6 +763,74 @@ const createStyles = (colors: any) =>
       fontSize: 13,
       color: colors.danger,
     },
+
+    // ── Tags ──
+    tagsSection: {
+      marginBottom: 20,
+      gap: 10,
+    },
+    tagsHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    tagsSectionTitle: {
+      fontWeight: "600",
+      fontSize: 15,
+      color: colors.text,
+    },
+    chipsRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+    chip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 20,
+      backgroundColor: colors.tagChipBg,
+      borderWidth: 1,
+      borderColor: colors.tagChipBorder,
+    },
+    chipText: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: colors.tagChipText,
+    },
+    chipRemove: {
+      marginLeft: 2,
+    },
+    tagInputRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      backgroundColor: colors.card,
+    },
+    tagInput: {
+      flex: 1,
+      height: 44,
+      color: colors.text,
+      fontSize: 14,
+    },
+    tagAddButton: {
+      padding: 4,
+    },
+    tagAddButtonDisabled: {
+      opacity: 0.35,
+    },
+    tagsEmptyHint: {
+      fontSize: 12,
+      color: colors.subText,
+      lineHeight: 17,
+    },
+
     // ── Custom Fields ──
     customFieldsSection: {
       marginTop: 8,

@@ -13,6 +13,7 @@ export default function SetupScreen() {
     customFields,
     setFormData,
     resetForm,
+    tags = [],
   } = useForm();
 
   useEffect(() => {
@@ -29,6 +30,7 @@ export default function SetupScreen() {
       secretKey={secretKey}
       notes={notes}
       customFields={customFields}
+      tags={tags}
       setFormData={setFormData}
       resetForm={resetForm}
     />

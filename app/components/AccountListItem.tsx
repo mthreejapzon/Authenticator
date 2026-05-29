@@ -15,6 +15,7 @@ export default function AccountListItem(props: {
       password: string;
       value: string;
       isFavorite?: boolean;
+      tags?: string[];
     } | null;
   };
   onDelete: (key: string) => void;
@@ -183,6 +184,44 @@ export default function AccountListItem(props: {
             )}
           </View>
         </View>
+
+        {(account.data?.tags ?? []).length > 0 && (
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              gap: 4,
+              marginTop: 4,
+            }}
+          >
+            {(account.data?.tags ?? [])
+              .slice()
+              .sort((a, b) => a.localeCompare(b))
+              .map((tag) => (
+                <View
+                  key={tag}
+                  style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 2,
+                    borderRadius: 20,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.card,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "500",
+                      color: colors.subText,
+                    }}
+                  >
+                    {tag}
+                  </Text>
+                </View>
+              ))}
+          </View>
+        )}
 
         {/* Chevron to match mobile list design (no inline delete) */}
         <Text

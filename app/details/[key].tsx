@@ -40,6 +40,7 @@ export default function DetailsScreen() {
     secretKey,
     notes,
     customFields,
+    tags = [],
     setFormData,
     resetForm,
   } = useForm();
@@ -55,6 +56,7 @@ export default function DetailsScreen() {
     createdAt?: string;
     modifiedAt?: string;
     isFavorite?: boolean;
+    tags?: string[];
   } | null>(null);
 
   const [isEditing, setIsEditing] = useState<boolean>(false);
@@ -439,6 +441,7 @@ export default function DetailsScreen() {
         accountOtp={data?.value}
         secretKey={secretKey}
         customFields={customFields}
+        tags={tags}
         notes={notes}
         setFormData={setFormData}
         resetForm={resetForm}
@@ -625,19 +628,53 @@ export default function DetailsScreen() {
               })()}
             </View>
 
-            {/* Account Name and Email */}
             <View style={{ flex: 1, justifyContent: "center" }}>
-              <Text
+              {/* Account name + tags on the same row */}
+              <View
                 style={{
-                  fontSize: 24,
-                  color: colors.text,
-                  fontWeight: "500",
-                  lineHeight: 32,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 8,
                   marginBottom: 4,
                 }}
               >
-                {data?.accountName || "N/A"}
-              </Text>
+                <Text
+                  style={{
+                    fontSize: 24,
+                    color: colors.text,
+                    fontWeight: "500",
+                    lineHeight: 32,
+                  }}
+                >
+                  {data?.accountName || "N/A"}
+                </Text>
+
+                {(data?.tags ?? []).map((tag) => (
+                  <View
+                    key={tag}
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 3,
+                      borderRadius: 20,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.card,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "600",
+                        color: colors.subText,
+                      }}
+                    >
+                      {tag}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
               <Text
                 style={{
                   fontSize: 16,

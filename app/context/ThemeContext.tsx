@@ -31,6 +31,9 @@ const lightColors = {
   otpProgressBg: "#e5e7eb",
   iconButton: "#ffffff",
   divider: "#e5e7eb",
+  tagChipBg: "#f3f4f6",
+  tagChipBorder: "#e5e7eb",
+  tagChipText: "#111827",
 };
 
 const darkColors = {
@@ -53,6 +56,9 @@ const darkColors = {
   otpProgressBg: "#1f2937",
   iconButton: "#1e293b",
   divider: "#1f2937",
+  tagChipBg: "#1f2937",
+  tagChipBorder: "#334155",
+  tagChipText: "#ffffff",
 };
 
 type ThemeColors = typeof lightColors;
