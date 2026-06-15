@@ -1809,7 +1809,7 @@ export default function SettingsScreen() {
           </Text>
 
           <View style={{ gap: 8 }}>
-            {/* Export Vault */}
+            {/* BackUp Vault */}
             <TouchableOpacity
               onPress={exportAllAccounts}
               style={{
@@ -1834,11 +1834,11 @@ export default function SettingsScreen() {
                   opacity: !hasToken || isWorking ? 0.5 : 1,
                 }}
               >
-                Export Vault
+                Backup Vault
               </Text>
             </TouchableOpacity>
 
-            {/* Import Vault */}
+            {/* Restore Vault */}
             <TouchableOpacity
               onPress={importFromLatestBackup}
               style={{
@@ -1867,7 +1867,7 @@ export default function SettingsScreen() {
                   opacity: !hasToken || isWorking ? 0.5 : 1,
                 }}
               >
-                Import Vault
+                Restore Vault
               </Text>
             </TouchableOpacity>
 
