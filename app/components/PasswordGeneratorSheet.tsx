@@ -2,7 +2,13 @@ import Slider from "@react-native-community/slider";
 import { useState } from "react";
 import { Modal, Switch, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "../context/ThemeContext";
+import { getRandomBytes } from "../utils/cryptoPolyfill";
 
+/**
+ * Generate a cryptographically secure random password.
+ * Uses getRandomBytes (backed by expo-crypto on mobile, Web Crypto API on web)
+ * instead of Math.random() which is NOT cryptographically secure.
+ */
 function generatePassword(
   length: number,
   useNumbers: boolean,
@@ -16,8 +22,10 @@ function generatePassword(
   if (useNumbers) charset += numbers;
   if (useSymbols) charset += symbols;
 
-  return Array.from({ length }, () =>
-    charset.charAt(Math.floor(Math.random() * charset.length)),
+  // Use cryptographically secure random bytes to pick each character
+  const randomBytes = getRandomBytes(length);
+  return Array.from(randomBytes, (byte) =>
+    charset.charAt(byte % charset.length),
   ).join("");
 }
 

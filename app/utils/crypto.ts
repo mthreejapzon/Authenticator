@@ -28,17 +28,42 @@ function toShortToken(input: string): string {
 // ============================================================================
 
 /**
- * Derive AES key from PAT.
+ * PBKDF2 configuration
+ * 10,000 iterations matches the PIN hashing work factor and is
+ * appropriate for mobile devices while still being brute-force resistant.
  */
-function keyFromPAT(pat: string) {
+const PBKDF2_ITERATIONS = 10000;
+const PBKDF2_KEY_SIZE = 256 / 32; // 256-bit key
+
+/**
+ * [v3 - SECURE] Derive AES key from PAT using PBKDF2 + per-encryption salt.
+ * Much stronger than a bare SHA256 — adds work factor to resist brute-force.
+ */
+function keyFromPAT_v3(
+  pat: string,
+  salt: CryptoJS.lib.WordArray
+): CryptoJS.lib.WordArray {
   if (!pat || pat.trim().length === 0) {
     throw new Error("PAT is required for encryption/decryption.");
   }
-  return CryptoJS.SHA256(pat); // 256-bit key
+  return CryptoJS.PBKDF2(pat, salt, {
+    keySize: PBKDF2_KEY_SIZE,
+    iterations: PBKDF2_ITERATIONS,
+    hasher: CryptoJS.algo.SHA256,
+  });
 }
 
 /**
- * Encrypt text using PAT-derived key.
+ * [v2 - LEGACY] Derive AES key from PAT using a bare SHA256.
+ * Kept only for decrypting existing v2 ciphertexts — do NOT use for new encryptions.
+ */
+function keyFromPAT_v2(pat: string): CryptoJS.lib.WordArray {
+  return CryptoJS.SHA256(pat);
+}
+
+/**
+ * Encrypt text using PAT-derived key (PBKDF2, v3 format).
+ * Output format: "v3:<saltB64>:<ivB64>:<ctB64>"
  */
 export async function encryptText(
   plainText: string,
@@ -47,11 +72,15 @@ export async function encryptText(
   if (!plainText) {
     throw new Error("Cannot encrypt empty text");
   }
-  
-  const key = keyFromPAT(pat);
+
+  // Generate a fresh random salt and IV for every encryption
+  const saltBytes = getRandomBytes(16);
+  const salt = toWordArray(saltBytes);
 
   const ivBytes = getRandomBytes(16);
   const iv = toWordArray(ivBytes);
+
+  const key = keyFromPAT_v3(pat, salt);
 
   const encrypted = CryptoJS.AES.encrypt(plainText, key, {
     iv,
@@ -59,17 +88,19 @@ export async function encryptText(
     padding: CryptoJS.pad.Pkcs7,
   });
 
+  const saltB64 = CryptoJS.enc.Base64.stringify(salt);
   const ivB64 = CryptoJS.enc.Base64.stringify(iv);
   const ctB64 = encrypted.toString();
 
-  const fullCipher = `v2:${ivB64}:${ctB64}`;
+  // v3 format embeds the salt so no extra storage key is needed
+  const fullCipher = `v3:${saltB64}:${ivB64}:${ctB64}`;
 
-  // Store inside secure store only for faster local lookup
+  // Cache in SecureStore for faster local lookup
   const token = toShortToken(fullCipher);
-  
+
   try {
     await Storage.setItemAsync(`cipher_${token}`, fullCipher);
-    console.log(`✅ Stored cipher with token: cipher_${token}`);
+    console.log(`✅ Stored v3 cipher with token: cipher_${token}`);
   } catch (err) {
     console.error("Failed to store cipher token:", err);
     // Return full cipher if storage fails
@@ -81,6 +112,7 @@ export async function encryptText(
 
 /**
  * Decrypt using PAT-derived key.
+ * Handles both v3 (PBKDF2, secure) and v2 (SHA256, legacy) formats.
  * Automatically resolves short tokens from SecureStore.
  */
 export async function decryptText(
@@ -95,28 +127,27 @@ export async function decryptText(
     throw new Error("PAT is required for decryption");
   }
 
-  const key = keyFromPAT(pat);
   let actualCipher = cipherText;
 
-  // 1. If it's a short token (not starting with v2:)
-  if (!cipherText.startsWith("v2:")) {
+  // 1. Resolve short token → full cipher from SecureStore
+  if (!cipherText.startsWith("v2:") && !cipherText.startsWith("v3:")) {
     console.log(`🔍 Attempting to resolve token: ${cipherText.substring(0, 20)}...`);
-    
+
     try {
       const stored = await Storage.getItemAsync(`cipher_${cipherText}`);
-      
+
       if (stored) {
         console.log("✅ Token resolved from storage");
         actualCipher = stored;
       } else {
         console.warn("⚠️ Token not found in storage");
-        
-        // Check if it might be a direct cipher text that doesn't have v2: prefix
+
+        // Legacy fallback: might be a raw v2 cipher without its prefix
         if (cipherText.includes(":") && cipherText.split(":").length === 3) {
           console.log("🔄 Treating as direct cipher without v2: prefix");
           actualCipher = `v2:${cipherText}`;
         } else if (!cipherText.includes(":")) {
-          // Might be plaintext from old data
+          // Very old plaintext data — return as-is
           console.log("⚠️ Appears to be plaintext, returning as-is");
           return cipherText;
         } else {
@@ -133,56 +164,98 @@ export async function decryptText(
     }
   }
 
-  // Must be v2 format
-  if (!actualCipher.startsWith("v2:")) {
-    throw new Error(
-      `Unsupported ciphertext format. Expected 'v2:' prefix but got: ${actualCipher.substring(0, 20)}...`
-    );
-  }
+  // 2. v3 — PBKDF2 (secure, new format)
+  if (actualCipher.startsWith("v3:")) {
+    try {
+      const parts = actualCipher.split(":");
 
-  try {
-    const parts = actualCipher.split(":");
-    
-    if (parts.length !== 3) {
-      throw new Error(
-        `Malformed cipher - expected 3 parts (v2:iv:ct) but got ${parts.length}`
-      );
-    }
+      if (parts.length !== 4) {
+        throw new Error(
+          `Malformed v3 cipher - expected 4 parts (v3:salt:iv:ct) but got ${parts.length}`
+        );
+      }
 
-    const [, ivB64, ctB64] = parts;
+      const [, saltB64, ivB64, ctB64] = parts;
 
-    if (!ivB64 || !ctB64) {
-      throw new Error("Missing IV or ciphertext component");
-    }
+      if (!saltB64 || !ivB64 || !ctB64) {
+        throw new Error("Missing salt, IV, or ciphertext component in v3 cipher");
+      }
 
-    const iv = CryptoJS.enc.Base64.parse(ivB64);
+      const salt = CryptoJS.enc.Base64.parse(saltB64);
+      const iv = CryptoJS.enc.Base64.parse(ivB64);
+      const key = keyFromPAT_v3(pat, salt);
 
-    const decrypted = CryptoJS.AES.decrypt(ctB64, key, {
-      iv,
-      mode: CryptoJS.mode.CBC,
-      padding: CryptoJS.pad.Pkcs7,
-    });
+      const decrypted = CryptoJS.AES.decrypt(ctB64, key, {
+        iv,
+        mode: CryptoJS.mode.CBC,
+        padding: CryptoJS.pad.Pkcs7,
+      });
 
-    const result = decrypted.toString(CryptoJS.enc.Utf8);
+      const result = decrypted.toString(CryptoJS.enc.Utf8);
 
-    if (!result || result.length === 0) {
-      throw new Error(
-        "Decryption failed — incorrect PAT or corrupted backup. The GitHub token used for decryption must match the one used for encryption."
-      );
-    }
+      if (!result || result.length === 0) {
+        throw new Error(
+          "Decryption failed — incorrect PAT or corrupted data."
+        );
+      }
 
-    console.log("✅ Decryption successful");
-    return result;
-  } catch (err) {
-    if (err instanceof Error) {
-      // Re-throw our custom errors
-      if (err.message.includes("Decryption failed")) {
+      console.log("✅ v3 decryption successful");
+      return result;
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Decryption failed")) {
         throw err;
       }
-      throw new Error(`Decryption error: ${err.message}`);
+      throw new Error(`v3 decryption error: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
-    throw new Error("Decryption failed with unknown error");
   }
+
+  // 3. v2 — Legacy SHA256 (backward compat only)
+  if (actualCipher.startsWith("v2:")) {
+    try {
+      const parts = actualCipher.split(":");
+
+      if (parts.length !== 3) {
+        throw new Error(
+          `Malformed v2 cipher - expected 3 parts (v2:iv:ct) but got ${parts.length}`
+        );
+      }
+
+      const [, ivB64, ctB64] = parts;
+
+      if (!ivB64 || !ctB64) {
+        throw new Error("Missing IV or ciphertext component in v2 cipher");
+      }
+
+      const iv = CryptoJS.enc.Base64.parse(ivB64);
+      const key = keyFromPAT_v2(pat);
+
+      const decrypted = CryptoJS.AES.decrypt(ctB64, key, {
+        iv,
+        mode: CryptoJS.mode.CBC,
+        padding: CryptoJS.pad.Pkcs7,
+      });
+
+      const result = decrypted.toString(CryptoJS.enc.Utf8);
+
+      if (!result || result.length === 0) {
+        throw new Error(
+          "Decryption failed — incorrect PAT or corrupted backup. The GitHub token used for decryption must match the one used for encryption."
+        );
+      }
+
+      console.log("✅ v2 (legacy) decryption successful");
+      return result;
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Decryption failed")) {
+        throw err;
+      }
+      throw new Error(`v2 decryption error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    }
+  }
+
+  throw new Error(
+    `Unsupported ciphertext format. Expected 'v2:' or 'v3:' prefix but got: ${actualCipher.substring(0, 20)}...`
+  );
 }
 
 // ============================================================================
