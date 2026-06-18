@@ -64,6 +64,9 @@ export default function SettingsScreen() {
   const [showPinVerification, setShowPinVerification] = useState(false);
   const [isRemovingPin, setIsRemovingPin] = useState(false);
   const [showThemeOptions, setShowThemeOptions] = useState(false);
+  const [isBiometricsSupportedByDevice, setIsBiometricsSupportedByDevice] = useState(false);
+  const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+  const [biometricsName, setBiometricsName] = useState("Biometrics");
   const { themeMode, setThemeMode, colors } = useTheme();
   const [csvWorking, setCsvWorking] = useState(false);
   const [showImportOptions, setShowImportOptions] = useState(false);
@@ -75,11 +78,24 @@ export default function SettingsScreen() {
     });
   }, [navigation]);
 
-  // Check if PIN is configured
+  // Check if PIN and biometrics are configured
   useEffect(() => {
     (async () => {
       const pinExists = await hasPin();
       setHasPinConfigured(pinExists);
+
+      const { isBiometricsSupported, isBiometricsEnabled, getSupportedBiometryNames } =
+        await import("./utils/biometrics");
+      const supported = await isBiometricsSupported();
+      setIsBiometricsSupportedByDevice(supported);
+      if (supported) {
+        const enabled = await isBiometricsEnabled();
+        setBiometricsEnabled(enabled);
+        const names = await getSupportedBiometryNames();
+        if (names.length > 0) {
+          setBiometricsName(names[0]);
+        }
+      }
     })();
   }, []);
 
@@ -146,6 +162,34 @@ export default function SettingsScreen() {
 
       // rollback on failure
       setAutoRestoreEnabled(!enabled);
+    }
+  };
+
+  const handleToggleBiometrics = async (value: boolean) => {
+    if (!hasPinConfigured) {
+      Alert.alert("PIN Required", "You must configure a Security PIN before enabling biometric unlock.");
+      return;
+    }
+
+    try {
+      const { setBiometricsEnabled: saveBiometrics, authenticateWithBiometrics } =
+        await import("./utils/biometrics");
+
+      if (value) {
+        const success = await authenticateWithBiometrics(`Confirm enabling ${biometricsName}`);
+        if (success) {
+          await saveBiometrics(true);
+          setBiometricsEnabled(true);
+        } else {
+          setBiometricsEnabled(false);
+        }
+      } else {
+        await saveBiometrics(false);
+        setBiometricsEnabled(false);
+      }
+    } catch (err) {
+      console.error("Failed to toggle biometrics:", err);
+      setBiometricsEnabled(!value);
     }
   };
 
@@ -508,7 +552,7 @@ export default function SettingsScreen() {
       await Storage.deleteItemAsync(LAST_BACKUP_KEY);
       await Storage.deleteItemAsync(BACKUP_HISTORY_KEY);
 
-      // Delete PIN data
+      // Delete PIN and Biometric data
       try {
         // Force remove PIN without verification since we're clearing everything
         await Storage.deleteItemAsync("security_pin_hash");
@@ -516,6 +560,8 @@ export default function SettingsScreen() {
         await Storage.deleteItemAsync("app_locked");
         await Storage.deleteItemAsync("failed_pin_attempts");
         await Storage.deleteItemAsync("lockout_until");
+        await Storage.deleteItemAsync("use_biometrics");
+        setBiometricsEnabled(false);
       } catch (err) {
         console.warn("Failed to clear PIN data:", err);
       }
@@ -631,8 +677,10 @@ export default function SettingsScreen() {
       await Storage.deleteItemAsync("app_locked");
       await Storage.deleteItemAsync("failed_pin_attempts");
       await Storage.deleteItemAsync("lockout_until");
+      await Storage.deleteItemAsync("use_biometrics");
 
       setHasPinConfigured(false);
+      setBiometricsEnabled(false);
 
       const msg = "Security PIN removed successfully.";
       if (Platform.OS === "web") {
@@ -1693,6 +1741,47 @@ export default function SettingsScreen() {
             Security
           </Text>
           <View style={{ gap: 8 }}>
+            {isBiometricsSupportedByDevice && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  height: 44,
+                  backgroundColor: colors.background,
+                  borderWidth: 0.6,
+                  borderColor: colors.border,
+                  borderRadius: 8,
+                  paddingHorizontal: 12,
+                  marginBottom: 8,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Ionicons
+                    name={biometricsName.includes("Face") ? "scan-outline" : "finger-print-outline"}
+                    size={16}
+                    color={colors.text}
+                  />
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontSize: 14,
+                      fontWeight: "500",
+                      marginLeft: 12,
+                    }}
+                  >
+                    Unlock with {biometricsName}
+                  </Text>
+                </View>
+                <Switch
+                  value={biometricsEnabled}
+                  onValueChange={handleToggleBiometrics}
+                  trackColor={{ false: "#cbced4", true: colors.primary }}
+                  thumbColor="#fff"
+                  ios_backgroundColor="#cbced4"
+                />
+              </View>
+            )}
             {/* Setup/Change PIN */}
             {!hasPinConfigured ? (
               <TouchableOpacity

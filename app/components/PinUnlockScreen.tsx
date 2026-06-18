@@ -24,6 +24,8 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
+  const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+  const [biometricsName, setBiometricsName] = useState("Biometrics");
   const [lockoutRemainingMs, setLockoutRemainingMs] = useState<number | null>(
     null,
   );
@@ -54,7 +56,36 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
   /* ---------------- CHECK LOCKOUT ---------------- */
 
   useEffect(() => {
-    checkLockoutStatus();
+    (async () => {
+      await checkLockoutStatus();
+
+      try {
+        const { isBiometricsSupported, isBiometricsEnabled, getSupportedBiometryNames } =
+          await import("../utils/biometrics");
+        const supported = await isBiometricsSupported();
+        const enabled = await isBiometricsEnabled();
+
+        if (supported && enabled) {
+          setBiometricsEnabled(true);
+          const names = await getSupportedBiometryNames();
+          if (names.length > 0) {
+            setBiometricsName(names[0]);
+          }
+
+          // Check if locked out before auto-triggering
+          const { isInLockout } = await import("../utils/pinSecurity");
+          const lockout = await isInLockout();
+          if (!lockout.locked) {
+            setTimeout(() => {
+              triggerBiometricUnlock();
+            }, 300);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to setup biometrics in lock screen:", err);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkLockoutStatus = async () => {
@@ -68,6 +99,23 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
       }
     } catch (err) {
       console.error("Failed to check lockout:", err);
+    }
+  };
+
+  const triggerBiometricUnlock = async () => {
+    try {
+      const { authenticateWithBiometrics } = await import("../utils/biometrics");
+      const success = await authenticateWithBiometrics(`Unlock with ${biometricsName}`);
+
+      if (success) {
+        const { Storage } = await import("../utils/storage");
+        await Storage.setItemAsync("app_locked", "false");
+        await Storage.deleteItemAsync("failed_pin_attempts");
+        await Storage.deleteItemAsync("lockout_until");
+        onUnlock();
+      }
+    } catch (err) {
+      console.error("Biometric unlock failed:", err);
     }
   };
 
@@ -264,8 +312,32 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
           ].map((row, rowIndex) => (
             <View key={rowIndex} style={{ flexDirection: "row", gap: 16 }}>
               {row.map((key, colIndex) => {
-                if (key === "")
+                if (key === "") {
+                  if (biometricsEnabled) {
+                    return (
+                      <TouchableOpacity
+                        key={colIndex}
+                        onPress={triggerBiometricUnlock}
+                        disabled={!!lockoutRemainingMs}
+                        style={{
+                          flex: 1,
+                          height: 72,
+                          borderRadius: 12,
+                          backgroundColor: colors.card,
+                          justifyContent: "center",
+                          alignItems: "center",
+                        }}
+                      >
+                        <Ionicons
+                          name={biometricsName.includes("Face") ? "scan-outline" : "finger-print-outline"}
+                          size={28}
+                          color={colors.text}
+                        />
+                      </TouchableOpacity>
+                    );
+                  }
                   return <View key={colIndex} style={{ flex: 1 }} />;
+                }
 
                 if (key === "delete") {
                   return (
@@ -331,7 +403,7 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
             textAlign: "center",
           }}
         >
-          Forgot your PIN? You'll need to clear app data and set up again.
+          {"Forgot your PIN? You'll need to clear app data and set up again."}
         </Text>
       </View>
     </View>
