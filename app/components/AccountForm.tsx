@@ -25,6 +25,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { CustomField, FormFields } from "../context/FormContext";
 import { useTheme } from "../context/ThemeContext";
+import type { ThemeColors } from "../context/ThemeContext";
 import { decryptText } from "../utils/crypto";
 import { Storage } from "../utils/storage";
 import { GITHUB_PAT_KEY, USER_ACCOUNT_KEYS } from "../utils/constants";
@@ -717,7 +718,7 @@ function Field({
 
 /* ---------- Styles ---------- */
 
-const createStyles = (colors: any) =>
+const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     form: {
       padding: 24,

@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -15,6 +16,8 @@ import {
 } from "./utils/crypto";
 import { Storage } from "./utils/storage";
 import { GITHUB_PAT_KEY, USER_ACCOUNT_KEYS } from "./utils/constants";
+import { parseBackupCipher } from "./utils/backupUtils";
+import { useTheme } from "./context/ThemeContext";
 
 /**
  * Restore screen:
@@ -24,6 +27,7 @@ import { GITHUB_PAT_KEY, USER_ACCOUNT_KEYS } from "./utils/constants";
  */
 
 export default function Restore() {
+  const { colors } = useTheme();
   const [gistId, setGistId] = useState("");
   const [loading, setLoading] = useState(false);
   const [githubTokenExists, setGithubTokenExists] = useState(false);
@@ -155,33 +159,12 @@ export default function Restore() {
         return;
       }
 
-      // Support both formats: old JSON wrapper and new raw cipher string
       let cipher: string;
-
-      if (rawContent.startsWith("{")) {
-        // OLD FORMAT: JSON wrapper
-        try {
-          const parsed = JSON.parse(rawContent);
-          cipher = parsed.cipher;
-          if (!cipher) {
-            setLoading(false);
-            Alert.alert("Error", "Backup JSON missing the 'cipher' field.");
-            return;
-          }
-        } catch {
-          setLoading(false);
-          Alert.alert("Error", "Failed to parse backup JSON.");
-          return;
-        }
-      } else if (rawContent.startsWith("v2:")) {
-        // NEW FORMAT: Raw cipher string
-        cipher = rawContent;
-      } else {
+      try {
+        cipher = parseBackupCipher(rawContent);
+      } catch (err) {
         setLoading(false);
-        Alert.alert(
-          "Error",
-          `Invalid backup format. File starts with: ${rawContent.substring(0, 20)}...`
-        );
+        Alert.alert("Error", err instanceof Error ? err.message : "Invalid backup format.");
         return;
       }
 
@@ -242,11 +225,18 @@ export default function Restore() {
     <ScrollView
       contentContainerStyle={{
         padding: 20,
-        backgroundColor: "#f8f9fa",
+        backgroundColor: colors.background,
         flexGrow: 1,
       }}
     >
-      <Text style={{ fontSize: 22, fontWeight: "600", marginBottom: 14 }}>
+      <Text
+        style={{
+          fontSize: 22,
+          fontWeight: "600",
+          marginBottom: 14,
+          color: colors.text,
+        }}
+      >
         Restore Backup
       </Text>
 
@@ -255,18 +245,27 @@ export default function Restore() {
         <View
           style={{
             padding: 14,
-            backgroundColor: "#e8f5e9",
+            backgroundColor: colors.successBg,
             borderRadius: 10,
-            borderWidth: 1,
-            borderColor: "#4caf50",
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: colors.success,
             marginBottom: 14,
             flexDirection: "row",
             alignItems: "center",
             gap: 8,
           }}
         >
-          <Ionicons name="checkmark-circle-outline" size={22} color="#2e7d32" />
-          <Text style={{ color: "#2e7d32", fontWeight: "500" }}>
+          <Ionicons
+            name="checkmark-circle-outline"
+            size={22}
+            color={colors.success}
+          />
+          <Text
+            style={{
+              color: colors.success,
+              fontWeight: "500",
+            }}
+          >
             GitHub token detected
           </Text>
         </View>
@@ -274,14 +273,14 @@ export default function Restore() {
         <View
           style={{
             padding: 14,
-            backgroundColor: "#ffebee",
+            backgroundColor: colors.dangerBg,
             borderRadius: 10,
-            borderWidth: 1,
-            borderColor: "#d32f2f",
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: colors.danger,
             marginBottom: 14,
           }}
         >
-          <Text style={{ color: "#c62828", fontWeight: "500" }}>
+          <Text style={{ color: colors.danger, fontWeight: "500" }}>
             No GitHub token saved. Add one in Settings first.
           </Text>
         </View>
@@ -291,34 +290,47 @@ export default function Restore() {
       <View
         style={{
           padding: 14,
-          backgroundColor: "#e3f2fd",
+          backgroundColor: colors.infoBg,
           borderRadius: 10,
-          borderWidth: 1,
-          borderColor: "#2196f3",
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.primary,
           marginBottom: 20,
         }}
       >
-        <Text style={{ color: "#1565c0", fontSize: 14, lineHeight: 20 }}>
-          💡 <Text style={{ fontWeight: "600" }}>Important:</Text> You can only restore backups on the SAME device where they were created. The master key is device-specific and cannot be transferred.
+        <Text
+          style={{ color: colors.primary, fontSize: 14, lineHeight: 20 }}
+        >
+          {'💡 '}
+          <Text style={{ fontWeight: "600" }}>Important:</Text>
+          {' You can only restore backups on the SAME device where they were created. The master key is device-specific and cannot be transferred.'}
         </Text>
       </View>
 
       {/* Gist Input */}
-      <Text style={{ fontSize: 16, marginBottom: 6, fontWeight: "500" }}>
+      <Text
+        style={{
+          fontSize: 16,
+          marginBottom: 6,
+          fontWeight: "500",
+          color: colors.text,
+        }}
+      >
         Gist ID or URL (optional)
       </Text>
       <TextInput
         placeholder="Leave empty to auto-find using your PAT"
+        placeholderTextColor={colors.subText}
         value={gistId}
         onChangeText={setGistId}
         autoCapitalize="none"
         autoCorrect={false}
         style={{
-          backgroundColor: "#fff",
+          backgroundColor: colors.input,
+          color: colors.text,
           padding: 12,
           borderRadius: 10,
-          borderWidth: 1,
-          borderColor: "#ccc",
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.inputBorder,
           marginBottom: 20,
           fontSize: 15,
         }}
@@ -329,16 +341,23 @@ export default function Restore() {
         onPress={restoreBackup}
         disabled={loading || !githubTokenExists}
         style={{
-          backgroundColor: loading || !githubTokenExists ? "#9bbcf4" : "#0066FF",
+          backgroundColor:
+            loading || !githubTokenExists ? colors.border : colors.primary,
           paddingVertical: 14,
           borderRadius: 10,
           alignItems: "center",
         }}
       >
         {loading ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={colors.background} />
         ) : (
-          <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>
+          <Text
+            style={{
+              color: colors.background,
+              fontSize: 16,
+              fontWeight: "600",
+            }}
+          >
             Restore Backup
           </Text>
         )}
@@ -349,14 +368,22 @@ export default function Restore() {
         style={{
           marginTop: 24,
           padding: 14,
-          backgroundColor: "#fff3e0",
+          backgroundColor: colors.warningBg,
           borderRadius: 10,
-          borderWidth: 1,
-          borderColor: "#ff9800",
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.warning,
         }}
       >
-        <Text style={{ color: "#e65100", fontSize: 13, lineHeight: 18 }}>
-          ⚠️ <Text style={{ fontWeight: "600" }}>Warning:</Text> Restoring will replace all current accounts with the backup data. This action cannot be undone.
+        <Text
+          style={{
+            color: colors.warning,
+            fontSize: 13,
+            lineHeight: 18,
+          }}
+        >
+          {'⚠️ '}
+          <Text style={{ fontWeight: "600" }}>Warning:</Text>
+          {' Restoring will replace all current accounts with the backup data. This action cannot be undone.'}
         </Text>
       </View>
     </ScrollView>

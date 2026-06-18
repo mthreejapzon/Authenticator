@@ -13,6 +13,42 @@ import {
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /**
+ * Parses a raw backup file string into its cipher component.
+ *
+ * Supports two historical formats:
+ *  - Legacy JSON wrapper: `{ "cipher": "v2:..." }`
+ *  - Raw cipher string:   `v2:...` or `v3:...`
+ *
+ * @throws Error if the format is unrecognised.
+ */
+export function parseBackupCipher(rawContent: string): string {
+  const trimmed = rawContent.trim();
+
+  if (trimmed.startsWith("{")) {
+    // Legacy JSON wrapper format
+    let parsed: { cipher?: string };
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      throw new Error("Failed to parse backup JSON.");
+    }
+    if (!parsed.cipher) throw new Error("Backup JSON missing the 'cipher' field.");
+    return parsed.cipher;
+  }
+
+  if (trimmed.startsWith("v2:") || trimmed.startsWith("v3:")) {
+    // Raw cipher string format
+    return trimmed;
+  }
+
+  throw new Error(
+    `Invalid backup format. File starts with: ${trimmed.substring(0, 20)}...`,
+  );
+}
+
+
+
+/**
  * Export all accounts and encrypt the payload with the device master key.
  * Returns a ciphertext string in the same v2 format used by Restore.
  */

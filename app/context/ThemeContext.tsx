@@ -34,6 +34,13 @@ const lightColors = {
   tagChipBg: "#f3f4f6",
   tagChipBorder: "#e5e7eb",
   tagChipText: "#111827",
+  // ── Status colours ──────────────────────────────────────────────────────
+  success: "#16a34a",
+  successBg: "#f0fdf4",
+  warning: "#d97706",
+  warningBg: "#fffbeb",
+  infoBg: "#eff6ff",
+  dangerBg: "#fef2f2",
 };
 
 const darkColors = {
@@ -59,9 +66,16 @@ const darkColors = {
   tagChipBg: "#1f2937",
   tagChipBorder: "#334155",
   tagChipText: "#ffffff",
+  // ── Status colours ──────────────────────────────────────────────────────
+  success: "#4ade80",
+  successBg: "#052e16",
+  warning: "#fbbf24",
+  warningBg: "#1c1200",
+  infoBg: "#0f172a",
+  dangerBg: "#2d0a0a",
 };
 
-type ThemeColors = typeof lightColors;
+export type ThemeColors = typeof lightColors;
 
 type ThemeContextType = {
   themeMode: ThemeMode; // User selection

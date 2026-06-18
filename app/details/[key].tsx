@@ -28,6 +28,7 @@ import { useTheme } from "../context/ThemeContext";
 import { decryptText } from "../utils/crypto";
 import { Clipboard, Storage } from "../utils/storage";
 import { GITHUB_PAT_KEY, USER_ACCOUNT_KEYS } from "../utils/constants";
+import { showAlert } from "../utils/alert";
 
 export default function DetailsScreen() {
   const router = useRouter();
@@ -144,11 +145,7 @@ export default function DetailsScreen() {
           // Show alert to user
           const message =
             "GitHub token not found. Please add your GitHub token in Settings to decrypt passwords and OTP codes.";
-          if (Platform.OS === "web") {
-            window.alert(message);
-          } else {
-            Alert.alert("Token Required", message);
-          }
+          showAlert("Token Required", message);
           return;
         }
 
@@ -204,11 +201,7 @@ export default function DetailsScreen() {
         if (hasDecryptionError) {
           const message =
             "Decryption failed. This usually means:\n\n1. Your GitHub token is incorrect\n2. The data was encrypted with a different token\n3. The backup data is corrupted\n\nPlease verify your GitHub token in Settings.";
-          if (Platform.OS === "web") {
-            window.alert(message);
-          } else {
-            Alert.alert("Decryption Error", message);
-          }
+          showAlert("Decryption Error", message);
         }
 
         // Decrypt custom fields
@@ -311,11 +304,7 @@ export default function DetailsScreen() {
       } catch (err) {
         console.error("❌ Error loading account details:", err);
         const message = `Failed to load account: ${err instanceof Error ? err.message : "Unknown error"}`;
-        if (Platform.OS === "web") {
-          window.alert(message);
-        } else {
-          Alert.alert("Error", message);
-        }
+        showAlert("Error", message);
         router.replace("/");
       }
     })();

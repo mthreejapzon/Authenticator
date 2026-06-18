@@ -33,6 +33,7 @@ import {
   USER_ACCOUNT_KEYS,
 } from "./utils/constants";
 import { showAlert } from "./utils/alert";
+import { parseBackupCipher } from "./utils/backupUtils";
 
 type BackupHistoryItem = {
   id: string;
@@ -934,25 +935,7 @@ export default function SettingsScreen() {
 
       const rawContent = file.content.trim();
 
-      let cipher: string;
-
-      if (rawContent.startsWith("{")) {
-        console.log("Detected old JSON format");
-        try {
-          const parsed = JSON.parse(rawContent);
-          cipher = parsed.cipher;
-          if (!cipher) throw new Error("Missing encrypted content");
-        } catch {
-          throw new Error("Failed to parse backup JSON");
-        }
-      } else if (rawContent.startsWith("v2:")) {
-        console.log("Detected raw cipher format");
-        cipher = rawContent;
-      } else {
-        throw new Error(
-          `Invalid backup format: ${rawContent.substring(0, 20)}...`,
-        );
-      }
+      const cipher = parseBackupCipher(rawContent);
 
       const masterKey = await getOrCreateMasterKey();
 
