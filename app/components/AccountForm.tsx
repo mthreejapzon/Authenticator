@@ -27,6 +27,7 @@ import type { CustomField, FormFields } from "../context/FormContext";
 import { useTheme } from "../context/ThemeContext";
 import { decryptText } from "../utils/crypto";
 import { Storage } from "../utils/storage";
+import { GITHUB_PAT_KEY, USER_ACCOUNT_KEYS } from "../utils/constants";
 import PasswordGeneratorSheet from "./PasswordGeneratorSheet";
 import PasswordStrengthIndicator from "./PasswordStrengthIndicator";
 
@@ -68,11 +69,9 @@ export default function AccountForm({
   const [isSaving, setIsSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
-  const [, setMissingFields] = useState<string[]>([]);
   const [hasToken, setHasToken] = useState(false);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(!!secretKey?.trim());
   const [showGenerator, setShowGenerator] = useState(false);
-  const [showTagsModal, setShowTagsModal] = useState(false);
   // ── Tag input state ──
   const [tagInput, setTagInput] = useState("");
   const tagInputRef = useRef<TextInput>(null);
@@ -111,7 +110,7 @@ export default function AccountForm({
    */
   useEffect(() => {
     (async () => {
-      const token = await Storage.getItemAsync("github_token");
+      const token = await Storage.getItemAsync(GITHUB_PAT_KEY);
       setHasToken(!!token?.trim());
     })();
   }, []);
@@ -130,7 +129,7 @@ export default function AccountForm({
     if (!accountKey || !password) return;
 
     (async () => {
-      const pat = await Storage.getItemAsync("github_token");
+      const pat = await Storage.getItemAsync(GITHUB_PAT_KEY);
       if (!pat) return;
 
       try {
@@ -161,7 +160,7 @@ export default function AccountForm({
     try {
       setIsSaving(true);
 
-      const pat = await Storage.getItemAsync("github_token");
+      const pat = await Storage.getItemAsync(GITHUB_PAT_KEY);
       const encrypted = !!pat?.trim();
 
       let otpValue = accountOtp || "";
@@ -224,10 +223,10 @@ export default function AccountForm({
 
       if (!accountKey) {
         const keys = JSON.parse(
-          (await Storage.getItemAsync("userAccountKeys")) || "[]",
+          (await Storage.getItemAsync(USER_ACCOUNT_KEYS)) || "[]",
         );
         if (!keys.includes(key)) keys.push(key);
-        await Storage.setItemAsync("userAccountKeys", JSON.stringify(keys));
+        await Storage.setItemAsync(USER_ACCOUNT_KEYS, JSON.stringify(keys));
       }
 
       const target = referer ?? (`/details/${key}` as RelativePathString);

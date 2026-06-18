@@ -1,23 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../context/ThemeContext";
+import { PIN_LENGTH, VERIFICATION_SUCCESS_DELAY_MS } from "../utils/constants";
+import { showAlert } from "../utils/alert";
+import PinDots from "./PinDots";
+import PinPad from "./PinPad";
 
 interface PinVerificationScreenProps {
   onVerified: () => void;
   onCancel: () => void;
   mode?: "change" | "remove";
 }
-
-const PIN_LENGTH = 6;
 
 export default function PinVerificationScreen({
   onVerified,
@@ -60,10 +55,10 @@ export default function PinVerificationScreen({
       const { verifyPin: verifyPinUtil } = await import("../utils/pinSecurity");
       const result = await verifyPinUtil(enteredPin);
 
-      if (result.success === true) {
+      if (result.success) {
         setTimeout(() => {
           onVerified();
-        }, 300);
+        }, VERIFICATION_SUCCESS_DELAY_MS);
       } else {
         setError("Incorrect PIN. Please try again.");
         setPin("");
@@ -72,37 +67,13 @@ export default function PinVerificationScreen({
       const msg = err instanceof Error ? err.message : "Verification failed.";
       setError(msg);
       setPin("");
-
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert("Error", msg);
-      }
+      showAlert("Error", msg);
     } finally {
       setIsVerifying(false);
     }
   };
 
-  /* ---------------- PIN DOTS ---------------- */
-
-  const renderPinDots = () => (
-    <View style={{ flexDirection: "row", gap: 12, justifyContent: "center" }}>
-      {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-        <View
-          key={i}
-          style={{
-            width: 14,
-            height: 14,
-            borderRadius: 7,
-            backgroundColor: i < pin.length ? colors.primary : colors.border,
-          }}
-        />
-      ))}
-    </View>
-  );
-
   const title = mode === "remove" ? "Verify PIN to Remove" : "Verify Your PIN";
-
   const subtitle =
     mode === "remove"
       ? "Enter your current PIN to remove protection"
@@ -139,29 +110,21 @@ export default function PinVerificationScreen({
           {title}
         </Text>
 
-        <Text
-          style={{
-            fontSize: 16,
-            color: colors.subText,
-            lineHeight: 24,
-          }}
-        >
+        <Text style={{ fontSize: 16, color: colors.subText, lineHeight: 24 }}>
           {subtitle}
         </Text>
       </View>
 
       {/* PIN DOTS */}
-      <View style={{ paddingVertical: 40 }}>{renderPinDots()}</View>
+      <View style={{ paddingVertical: 40 }}>
+        <PinDots pin={pin} />
+      </View>
 
       {/* ERROR */}
       {error && (
         <View style={{ paddingHorizontal: 24, marginBottom: 20 }}>
           <Text
-            style={{
-              color: colors.danger,
-              fontSize: 14,
-              textAlign: "center",
-            }}
+            style={{ color: colors.danger, fontSize: 14, textAlign: "center" }}
           >
             {error}
           </Text>
@@ -176,80 +139,12 @@ export default function PinVerificationScreen({
       )}
 
       {/* NUMBER PAD */}
-      <View
-        style={{
-          flex: 1,
-          paddingHorizontal: 24,
-          justifyContent: "center",
-        }}
-      >
-        <View style={{ gap: 16 }}>
-          {[
-            ["1", "2", "3"],
-            ["4", "5", "6"],
-            ["7", "8", "9"],
-            ["", "0", "delete"],
-          ].map((row, rowIndex) => (
-            <View key={rowIndex} style={{ flexDirection: "row", gap: 16 }}>
-              {row.map((key, colIndex) => {
-                if (key === "")
-                  return <View key={colIndex} style={{ flex: 1 }} />;
-
-                if (key === "delete") {
-                  return (
-                    <TouchableOpacity
-                      key={colIndex}
-                      onPress={handleDelete}
-                      disabled={isVerifying}
-                      style={{
-                        flex: 1,
-                        height: 72,
-                        borderRadius: 12,
-                        backgroundColor: colors.card,
-                        justifyContent: "center",
-                        alignItems: "center",
-                        opacity: isVerifying ? 0.5 : 1,
-                      }}
-                    >
-                      <Ionicons
-                        name="backspace-outline"
-                        size={28}
-                        color={colors.text}
-                      />
-                    </TouchableOpacity>
-                  );
-                }
-
-                return (
-                  <TouchableOpacity
-                    key={colIndex}
-                    onPress={() => handleNumberPress(key)}
-                    disabled={isVerifying}
-                    style={{
-                      flex: 1,
-                      height: 72,
-                      borderRadius: 12,
-                      backgroundColor: colors.card,
-                      justifyContent: "center",
-                      alignItems: "center",
-                      opacity: isVerifying ? 0.5 : 1,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 28,
-                        fontWeight: "600",
-                        color: colors.text,
-                      }}
-                    >
-                      {key}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ))}
-        </View>
+      <View style={{ flex: 1, paddingHorizontal: 24, justifyContent: "center" }}>
+        <PinPad
+          onPress={handleNumberPress}
+          onDelete={handleDelete}
+          disabled={isVerifying}
+        />
       </View>
     </View>
   );

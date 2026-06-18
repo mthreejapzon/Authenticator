@@ -3,8 +3,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { decryptText, encryptText } from "./crypto";
 import { Storage } from "./storage";
-
-const USER_ACCOUNT_KEYS = "userAccountKeys";
+import { GITHUB_PAT_KEY, USER_ACCOUNT_KEYS } from "./constants";
 
 export type CSVAccount = {
   accountName: string;
@@ -262,7 +261,7 @@ export const exportAccountsToCSV = async (): Promise<{
       return { success: false, message: "No accounts to export." };
     }
 
-    const pat = await Storage.getItemAsync("github_token");
+    const pat = await Storage.getItemAsync(GITHUB_PAT_KEY);
     const rows: string[] = [CSV_HEADERS.join(",")];
 
     for (const key of keys) {
@@ -384,7 +383,7 @@ export const importAccountsFromCSV = async (
       };
     }
 
-    const pat = await Storage.getItemAsync("github_token");
+    const pat = await Storage.getItemAsync(GITHUB_PAT_KEY);
 
     if (mode === "overwrite") {
       const existingKeysStr = await Storage.getItemAsync(USER_ACCOUNT_KEYS);

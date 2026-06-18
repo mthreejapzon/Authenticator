@@ -7,6 +7,7 @@ import PinUnlockScreen from "./components/PinUnlockScreen";
 import { FormProvider } from "./context/FormContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { hasPin, isAppLocked, lockApp } from "./utils/pinSecurity";
+import { GITHUB_PAT_KEY } from "./utils/constants";
 
 export default function RootLayout() {
   return (
@@ -89,7 +90,7 @@ function RootContent() {
         } = await import("./utils/backupUtils");
         const { Storage } = await import("./utils/storage");
 
-        const token = await Storage.getItemAsync("github_token");
+        const token = await Storage.getItemAsync(GITHUB_PAT_KEY);
         if (token) {
           // Enable auto-sync by default if not set
           const syncEnabled = await isAutoSyncEnabled();

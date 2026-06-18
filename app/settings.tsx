@@ -7,6 +7,7 @@ import {
   Image,
   Platform,
   ScrollView,
+  StyleSheet,
   Switch,
   Text,
   TextInput,
@@ -24,15 +25,14 @@ import {
 } from "./utils/crypto";
 import { hasPin } from "./utils/pinSecurity";
 import { Storage } from "./utils/storage";
-
-/**
- * Keys used in SecureStore
- */
-const GITHUB_TOKEN_KEY = "github_token";
-const BACKUP_GIST_ID_KEY = "backup_gist_id";
-const LAST_BACKUP_KEY = "last_backup_at";
-const BACKUP_HISTORY_KEY = "backup_history";
-const USER_ACCOUNT_KEYS = "userAccountKeys";
+import {
+  BACKUP_GIST_ID_KEY,
+  BACKUP_HISTORY_KEY,
+  GITHUB_PAT_KEY as GITHUB_TOKEN_KEY,
+  LAST_BACKUP_KEY,
+  USER_ACCOUNT_KEYS,
+} from "./utils/constants";
+import { showAlert } from "./utils/alert";
 
 type BackupHistoryItem = {
   id: string;
@@ -53,11 +53,9 @@ export default function SettingsScreen() {
   const [gistId, setGistId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
   const [isWorking, setIsWorking] = useState(false);
-  const [, setLastBackup] = useState<string | null>(null);
   const [history, setHistory] = useState<BackupHistoryItem[]>([]);
   const [isLoadingToken, setIsLoadingToken] = useState(true);
   const [autoRestoreEnabled, setAutoRestoreEnabled] = useState(true);
-  const [, setSyncStatus] = useState<string>("Idle");
   const [showPinSetup, setShowPinSetup] = useState(false);
   const [hasPinConfigured, setHasPinConfigured] = useState(false);
   const [isInitialSetup, setIsInitialSetup] = useState(false);
@@ -112,32 +110,6 @@ export default function SettingsScreen() {
     })();
   }, []);
 
-  // Subscribe to sync state
-  useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
-
-    (async () => {
-      try {
-        const { onSyncStateChange } = await import("./utils/backupUtils");
-
-        unsubscribe = onSyncStateChange((syncing) => {
-          if (syncing) {
-            setSyncStatus("Syncing...");
-          } else {
-            setSyncStatus("Up to date");
-            // Clear status after 2 seconds
-            setTimeout(() => setSyncStatus("Idle"), 2000);
-          }
-        });
-      } catch (err) {
-        console.error("Failed to subscribe to sync state:", err);
-      }
-    })();
-
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, []);
 
   // Toggle auto-restore function
   const toggleAutoRestore = async (enabled: boolean) => {
@@ -152,11 +124,7 @@ export default function SettingsScreen() {
         ? "Auto-sync enabled. Your accounts will sync automatically."
         : "Auto-sync disabled. You'll need to sync manually.";
 
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert("Auto Sync", msg);
-      }
+      showAlert("Auto Sync", msg);
     } catch (err) {
       console.error("Failed to toggle auto-restore:", err);
 
@@ -216,7 +184,7 @@ export default function SettingsScreen() {
           setGistId(g);
           setGistIdInput(g);
         }
-        if (last) setLastBackup(last);
+        if (last) { /* last backup timestamp loaded — reserved for future display */ }
         if (hist) {
           try {
             setHistory(JSON.parse(hist));
@@ -239,11 +207,7 @@ export default function SettingsScreen() {
 
       if (!trimmedToken) {
         const msg = "Please enter your GitHub Personal Access Token.";
-        if (Platform.OS === "web") {
-          window.alert(msg);
-        } else {
-          Alert.alert("Missing token", msg);
-        }
+        showAlert("Missing token", msg);
         return;
       }
 
@@ -269,11 +233,7 @@ export default function SettingsScreen() {
           `• Token hasn't been revoked\n` +
           `• Token hasn't expired`;
 
-        if (Platform.OS === "web") {
-          window.alert(msg);
-        } else {
-          Alert.alert("Invalid Token", msg);
-        }
+        showAlert("Invalid Token", msg);
         return;
       }
 
@@ -293,11 +253,7 @@ export default function SettingsScreen() {
         successMsg += `To enable cloud backups, recreate the token with "gist" scope.`;
       }
 
-      if (Platform.OS === "web") {
-        window.alert(successMsg);
-      } else {
-        Alert.alert("Token Validated", successMsg);
-      }
+      showAlert("Token Validated", successMsg);
 
       // Proceed with saving
       await performTokenSave(trimmedToken);
@@ -308,11 +264,7 @@ export default function SettingsScreen() {
 
       const msg =
         err instanceof Error ? err.message : "Could not validate token.";
-      if (Platform.OS === "web") {
-        window.alert(`Error: ${msg}`);
-      } else {
-        Alert.alert("Validation failed", msg);
-      }
+      showAlert("Validation failed", msg);
     }
   };
 
@@ -396,17 +348,13 @@ export default function SettingsScreen() {
 
             setGistId(existingGistId);
             setGistIdInput(existingGistId);
-            const keysString = await Storage.getItemAsync("userAccountKeys");
+            const keysString = await Storage.getItemAsync(USER_ACCOUNT_KEYS);
             const keys = keysString ? JSON.parse(keysString) : [];
             const count = keys.length || 0;
             setStatus(`Restored ${count} account(s) successfully!`);
 
             const successMsg = `Successfully restored ${count} account(s) from backup!`;
-            if (Platform.OS === "web") {
-              window.alert(successMsg);
-            } else {
-              Alert.alert("Restore Complete", successMsg);
-            }
+            showAlert("Restore Complete", successMsg);
           } else {
             throw new Error("Failed to fetch backup content");
           }
@@ -414,22 +362,14 @@ export default function SettingsScreen() {
           setStatus("Token saved. Auto-sync enabled.");
 
           const msg = "GitHub token saved. Auto-sync is now enabled.";
-          if (Platform.OS === "web") {
-            window.alert(msg);
-          } else {
-            Alert.alert("Saved", msg);
-          }
+          showAlert("Saved", msg);
         }
       } else {
         setStatus("Token saved. Auto-sync enabled.");
 
         const msg =
           "GitHub token saved. Auto-sync is now enabled. Your accounts will be automatically backed up.";
-        if (Platform.OS === "web") {
-          window.alert(msg);
-        } else {
-          Alert.alert("Saved", msg);
-        }
+        showAlert("Saved", msg);
       }
     } catch (err) {
       console.error("Auto-restore check failed:", err);
@@ -437,11 +377,7 @@ export default function SettingsScreen() {
 
       const msg =
         "Token saved, but couldn't check for existing backups. You can manually restore from the Restore screen.";
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert("Saved", msg);
-      }
+      showAlert("Saved", msg);
     } finally {
       setIsWorking(false);
     }
@@ -455,11 +391,7 @@ export default function SettingsScreen() {
     // Only proceed with auto-restore if this was initial setup
     if (isInitialSetup) {
       const msg = "Security PIN set successfully! Your app is now protected.";
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert("Success", msg);
-      }
+      showAlert("Success", msg);
 
       // Continue with auto-restore flow
       const token = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
@@ -471,11 +403,7 @@ export default function SettingsScreen() {
     } else {
       // Just changing PIN - no auto-restore
       const msg = "Security PIN changed successfully!";
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert("Success", msg);
-      }
+      showAlert("Success", msg);
     }
   };
 
@@ -486,11 +414,7 @@ export default function SettingsScreen() {
     // Only proceed with auto-restore if this was initial setup
     if (isInitialSetup) {
       const msg = "You can set up a PIN later in Settings for added security.";
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert("PIN Skipped", msg);
-      }
+      showAlert("PIN Skipped", msg);
 
       // Continue with auto-restore flow
       const token = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
@@ -502,11 +426,7 @@ export default function SettingsScreen() {
     } else {
       // Just canceling PIN change - no message needed
       const msg = "PIN change canceled.";
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert("Canceled", msg);
-      }
+      showAlert("Canceled", msg);
     }
   };
 
@@ -580,22 +500,14 @@ export default function SettingsScreen() {
       setHasPinConfigured(false);
 
       const msg = "All data has been cleared successfully.";
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert("Cleared", msg);
-      }
+      showAlert("Cleared", msg);
 
       // Navigate back to home
       router.replace("/");
     } catch (err: any) {
       console.error("❌ Clear all data failed:", err);
       const msg = err.message || "Could not clear all data.";
-      if (Platform.OS === "web") {
-        window.alert(`Failed: ${msg}`);
-      } else {
-        Alert.alert("Clear failed", msg);
-      }
+      showAlert("Clear failed", msg);
     }
   };
 
@@ -683,18 +595,10 @@ export default function SettingsScreen() {
       setBiometricsEnabled(false);
 
       const msg = "Security PIN removed successfully.";
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert("Success", msg);
-      }
+      showAlert("Success", msg);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to remove PIN";
-      if (Platform.OS === "web") {
-        window.alert(`Error: ${msg}`);
-      } else {
-        Alert.alert("Error", msg);
-      }
+      showAlert("Error", msg);
     }
   };
 
@@ -713,11 +617,7 @@ export default function SettingsScreen() {
 
       if (!keys || keys.length === 0) {
         const msg = "No accounts stored.";
-        if (Platform.OS === "web") {
-          window.alert(msg);
-        } else {
-          Alert.alert("Nothing to export", msg);
-        }
+        showAlert("Nothing to export", msg);
         setStatus("No accounts to export.");
         setIsWorking(false);
         return;
@@ -749,11 +649,7 @@ export default function SettingsScreen() {
         masterKey = await getOrCreateMasterKey();
       } catch (err: any) {
         const msg = err.message || "Native crypto unavailable";
-        if (Platform.OS === "web") {
-          window.alert(msg);
-        } else {
-          Alert.alert("Backup failed", msg);
-        }
+        showAlert("Backup failed", msg);
         setIsWorking(false);
         setStatus("Failed: crypto unavailable");
         return;
@@ -765,11 +661,7 @@ export default function SettingsScreen() {
 
       if (!hasToken) {
         const msg = "Please save your GitHub token first.";
-        if (Platform.OS === "web") {
-          window.alert(msg);
-        } else {
-          Alert.alert("Missing token", msg);
-        }
+        showAlert("Missing token", msg);
         setIsWorking(false);
         return;
       }
@@ -951,19 +843,11 @@ export default function SettingsScreen() {
       setStatus(isUpdate ? "Backup updated!" : "Backup created!");
 
       const msg = `${isUpdate ? "Backup updated" : "New backup created"}!\nGist ID: ${targetGistId}`;
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert(isUpdate ? "Updated" : "Created", msg);
-      }
+      showAlert(isUpdate ? "Updated" : "Created", msg);
     } catch (err: any) {
       console.error("❌ Export failed:", err);
       const msg = err.message || String(err);
-      if (Platform.OS === "web") {
-        window.alert(`Backup failed: ${msg}`);
-      } else {
-        Alert.alert("Backup failed", msg);
-      }
+      showAlert("Backup failed", msg);
       setStatus(`Failed: ${msg}`);
     } finally {
       setIsWorking(false);
@@ -978,11 +862,7 @@ export default function SettingsScreen() {
     try {
       if (!hasToken) {
         const msg = "Please save your GitHub token first.";
-        if (Platform.OS === "web") {
-          window.alert(msg);
-        } else {
-          Alert.alert("Missing token", msg);
-        }
+        showAlert("Missing token", msg);
         setIsWorking(false);
         return;
       }
@@ -990,11 +870,7 @@ export default function SettingsScreen() {
       const token = await Storage.getItemAsync(GITHUB_TOKEN_KEY);
       if (!token) {
         const msg = "GitHub token not found.";
-        if (Platform.OS === "web") {
-          window.alert(msg);
-        } else {
-          Alert.alert("Missing token", msg);
-        }
+        showAlert("Missing token", msg);
         setIsWorking(false);
         return;
       }
@@ -1022,11 +898,7 @@ export default function SettingsScreen() {
 
       if (backupGists.length === 0) {
         const msg = "No encrypted backups found in your GitHub Gists.";
-        if (Platform.OS === "web") {
-          window.alert(msg);
-        } else {
-          Alert.alert("No backups found", msg);
-        }
+        showAlert("No backups found", msg);
         setIsWorking(false);
         return;
       }
@@ -1098,19 +970,11 @@ export default function SettingsScreen() {
 
       setStatus("Restore complete!");
       const msg = `Restored ${keys.length} account(s).`;
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert("Restore complete", msg);
-      }
+      showAlert("Restore complete", msg);
     } catch (err: any) {
       console.error("Restore error:", err);
       const msg = err.message || String(err);
-      if (Platform.OS === "web") {
-        window.alert(`Restore failed: ${msg}`);
-      } else {
-        Alert.alert("Restore failed", msg);
-      }
+      showAlert("Restore failed", msg);
       setStatus("Restore failed");
     } finally {
       setIsWorking(false);
@@ -1204,10 +1068,10 @@ export default function SettingsScreen() {
       {/* Custom Header */}
       <View
         style={{
-          borderBottomWidth: 0.613,
+          borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: colors.border,
           paddingTop: insets.top,
-          minHeight: 72.591,
+          minHeight: 72,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",

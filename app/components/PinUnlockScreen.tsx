@@ -1,21 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../context/ThemeContext";
+import { APP_LOCKED_KEY, FAILED_ATTEMPTS_KEY, LOCKOUT_UNTIL_KEY, PIN_LENGTH } from "../utils/constants";
+import { showAlert } from "../utils/alert";
+import PinDots from "./PinDots";
+import PinPad from "./PinPad";
 
 interface PinUnlockScreenProps {
   onUnlock: () => void;
 }
-
-const PIN_LENGTH = 6;
 
 export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
   const insets = useSafeAreaInsets();
@@ -26,12 +21,8 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
   const [isVerifying, setIsVerifying] = useState(false);
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
   const [biometricsName, setBiometricsName] = useState("Biometrics");
-  const [lockoutRemainingMs, setLockoutRemainingMs] = useState<number | null>(
-    null,
-  );
-  const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(
-    null,
-  );
+  const [lockoutRemainingMs, setLockoutRemainingMs] = useState<number | null>(null);
+  const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null);
 
   /* ---------------- LOCKOUT TIMER ---------------- */
 
@@ -53,7 +44,7 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
     return () => clearInterval(timer);
   }, [lockoutRemainingMs]);
 
-  /* ---------------- CHECK LOCKOUT ---------------- */
+  /* ---------------- CHECK LOCKOUT + BIOMETRICS ---------------- */
 
   useEffect(() => {
     (async () => {
@@ -72,7 +63,6 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
             setBiometricsName(names[0]);
           }
 
-          // Check if locked out before auto-triggering
           const { isInLockout } = await import("../utils/pinSecurity");
           const lockout = await isInLockout();
           if (!lockout.locked) {
@@ -109,9 +99,9 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
 
       if (success) {
         const { Storage } = await import("../utils/storage");
-        await Storage.setItemAsync("app_locked", "false");
-        await Storage.deleteItemAsync("failed_pin_attempts");
-        await Storage.deleteItemAsync("lockout_until");
+        await Storage.setItemAsync(APP_LOCKED_KEY, "false");
+        await Storage.deleteItemAsync(FAILED_ATTEMPTS_KEY);
+        await Storage.deleteItemAsync(LOCKOUT_UNTIL_KEY);
         onUnlock();
       }
     } catch (err) {
@@ -171,12 +161,7 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
       const msg = err instanceof Error ? err.message : "Verification failed";
       setError(msg);
       setPin("");
-
-      if (Platform.OS === "web") {
-        window.alert(`Error: ${msg}`);
-      } else {
-        Alert.alert("Error", msg);
-      }
+      showAlert("Error", msg);
     } finally {
       setIsVerifying(false);
     }
@@ -198,23 +183,28 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
     return `${seconds}s`;
   };
 
-  /* ---------------- PIN DOTS ---------------- */
+  /* ---------------- BIOMETRICS SLOT ---------------- */
 
-  const renderPinDots = () => (
-    <View style={{ flexDirection: "row", gap: 12, justifyContent: "center" }}>
-      {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-        <View
-          key={i}
-          style={{
-            width: 14,
-            height: 14,
-            borderRadius: 7,
-            backgroundColor: i < pin.length ? colors.primary : colors.border,
-          }}
-        />
-      ))}
-    </View>
-  );
+  const biometricsSlot = biometricsEnabled ? (
+    <TouchableOpacity
+      onPress={triggerBiometricUnlock}
+      disabled={!!lockoutRemainingMs}
+      style={{
+        flex: 1,
+        height: 72,
+        borderRadius: 12,
+        backgroundColor: colors.card,
+        justifyContent: "center",
+        alignItems: "center",
+      }}
+    >
+      <Ionicons
+        name={biometricsName.includes("Face") ? "scan-outline" : "finger-print-outline"}
+        size={28}
+        color={colors.text}
+      />
+    </TouchableOpacity>
+  ) : undefined;
 
   /* ---------------- UI ---------------- */
 
@@ -251,29 +241,19 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
       </View>
 
       {/* PIN DOTS */}
-      <View style={{ paddingVertical: 40 }}>{renderPinDots()}</View>
+      <View style={{ paddingVertical: 40 }}>
+        <PinDots pin={pin} />
+      </View>
 
       {/* ERROR / LOCKOUT */}
       <View style={{ paddingHorizontal: 24, marginBottom: 20 }}>
         {lockoutRemainingMs ? (
-          <Text
-            style={{
-              color: colors.danger,
-              fontSize: 14,
-              textAlign: "center",
-            }}
-          >
+          <Text style={{ color: colors.danger, fontSize: 14, textAlign: "center" }}>
             Locked. Try again in {formatRemaining()}
           </Text>
         ) : error ? (
           <>
-            <Text
-              style={{
-                color: colors.danger,
-                fontSize: 14,
-                textAlign: "center",
-              }}
-            >
+            <Text style={{ color: colors.danger, fontSize: 14, textAlign: "center" }}>
               {error}
             </Text>
 
@@ -300,109 +280,18 @@ export default function PinUnlockScreen({ onUnlock }: PinUnlockScreenProps) {
       )}
 
       {/* NUMBER PAD */}
-      <View
-        style={{ flex: 1, paddingHorizontal: 24, justifyContent: "center" }}
-      >
-        <View style={{ gap: 16 }}>
-          {[
-            ["1", "2", "3"],
-            ["4", "5", "6"],
-            ["7", "8", "9"],
-            ["", "0", "delete"],
-          ].map((row, rowIndex) => (
-            <View key={rowIndex} style={{ flexDirection: "row", gap: 16 }}>
-              {row.map((key, colIndex) => {
-                if (key === "") {
-                  if (biometricsEnabled) {
-                    return (
-                      <TouchableOpacity
-                        key={colIndex}
-                        onPress={triggerBiometricUnlock}
-                        disabled={!!lockoutRemainingMs}
-                        style={{
-                          flex: 1,
-                          height: 72,
-                          borderRadius: 12,
-                          backgroundColor: colors.card,
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                      >
-                        <Ionicons
-                          name={biometricsName.includes("Face") ? "scan-outline" : "finger-print-outline"}
-                          size={28}
-                          color={colors.text}
-                        />
-                      </TouchableOpacity>
-                    );
-                  }
-                  return <View key={colIndex} style={{ flex: 1 }} />;
-                }
-
-                if (key === "delete") {
-                  return (
-                    <TouchableOpacity
-                      key={colIndex}
-                      onPress={handleDelete}
-                      disabled={!!lockoutRemainingMs}
-                      style={{
-                        flex: 1,
-                        height: 72,
-                        borderRadius: 12,
-                        backgroundColor: colors.card,
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}
-                    >
-                      <Ionicons
-                        name="backspace-outline"
-                        size={28}
-                        color={colors.text}
-                      />
-                    </TouchableOpacity>
-                  );
-                }
-
-                return (
-                  <TouchableOpacity
-                    key={colIndex}
-                    onPress={() => handlePinInput(key)}
-                    disabled={!!lockoutRemainingMs}
-                    style={{
-                      flex: 1,
-                      height: 72,
-                      borderRadius: 12,
-                      backgroundColor: colors.card,
-                      justifyContent: "center",
-                      alignItems: "center",
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 28,
-                        fontWeight: "600",
-                        color: colors.text,
-                      }}
-                    >
-                      {key}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ))}
-        </View>
+      <View style={{ flex: 1, paddingHorizontal: 24, justifyContent: "center" }}>
+        <PinPad
+          onPress={handlePinInput}
+          onDelete={handleDelete}
+          disabled={!!lockoutRemainingMs}
+          biometricsSlot={biometricsSlot}
+        />
       </View>
 
       {/* FOOTER */}
       <View style={{ padding: 24, paddingBottom: insets.bottom + 24 }}>
-        <Text
-          style={{
-            fontSize: 12,
-            color: colors.subText,
-            textAlign: "center",
-          }}
-        >
+        <Text style={{ fontSize: 12, color: colors.subText, textAlign: "center" }}>
           {"Forgot your PIN? You'll need to clear app data and set up again."}
         </Text>
       </View>

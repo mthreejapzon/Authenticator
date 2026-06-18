@@ -14,6 +14,7 @@ import {
   getOrCreateMasterKey,
 } from "./utils/crypto";
 import { Storage } from "./utils/storage";
+import { GITHUB_PAT_KEY, USER_ACCOUNT_KEYS } from "./utils/constants";
 
 /**
  * Restore screen:
@@ -29,7 +30,7 @@ export default function Restore() {
 
   useEffect(() => {
     (async () => {
-      const stored = await Storage.getItemAsync("github_token");
+      const stored = await Storage.getItemAsync(GITHUB_PAT_KEY);
       setGithubTokenExists(!!stored);
     })();
   }, []);
@@ -113,7 +114,7 @@ export default function Restore() {
     try {
       setLoading(true);
 
-      const token = await Storage.getItemAsync("github_token");
+      const token = await Storage.getItemAsync(GITHUB_PAT_KEY);
       if (!token) {
         setLoading(false);
         Alert.alert("No Token", "You must save a GitHub token in Settings before restoring.");
@@ -209,7 +210,7 @@ export default function Restore() {
         }
 
         // Update account key list
-        await Storage.setItemAsync("userAccountKeys", JSON.stringify(keys));
+        await Storage.setItemAsync(USER_ACCOUNT_KEYS, JSON.stringify(keys));
 
         setLoading(false);
         Alert.alert("Success", `Restored ${keys.length} account(s) successfully!`);
@@ -219,7 +220,7 @@ export default function Restore() {
 
         // Friendly guidance when master key mismatch occurs
         const msg = (err && err.message) || String(err);
-        if (msg.includes("Decryption failed") || msg.includes("Decryption failed") || msg.includes("wrong master key") || msg.includes("Decryption failed")) {
+        if (msg.includes("Decryption failed") || msg.includes("wrong master key")) {
           Alert.alert(
             "Decryption failed",
             "Unable to decrypt the backup. This backup was likely created with a different device's master key."

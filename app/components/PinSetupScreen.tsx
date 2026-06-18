@@ -1,22 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../context/ThemeContext";
+import { PIN_LENGTH } from "../utils/constants";
+import { showAlert } from "../utils/alert";
+import PinDots from "./PinDots";
+import PinPad from "./PinPad";
 
 interface PinSetupScreenProps {
   onPinSetup: () => void;
   onSkip?: () => void;
 }
-
-const PIN_LENGTH = 6;
 
 export default function PinSetupScreen({
   onPinSetup,
@@ -84,51 +79,19 @@ export default function PinSetupScreen({
     try {
       const { setupPin } = await import("../utils/pinSecurity");
       await setupPin(pin);
-
-      const msg = "PIN set successfully! Your app is now protected.";
-
-      if (Platform.OS === "web") {
-        window.alert(msg);
-      } else {
-        Alert.alert("Success", msg);
-      }
-
+      showAlert("Success", "PIN set successfully! Your app is now protected.");
       onPinSetup();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to set PIN";
       setError(msg);
-
-      if (Platform.OS === "web") {
-        window.alert(`Error: ${msg}`);
-      } else {
-        Alert.alert("Error", msg);
-      }
+      showAlert("Error", msg);
     } finally {
       setIsWorking(false);
     }
   };
 
-  /* ---------------- PIN DOTS ---------------- */
-
-  const renderPinDots = (value: string) => (
-    <View style={{ flexDirection: "row", gap: 12, justifyContent: "center" }}>
-      {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-        <View
-          key={i}
-          style={{
-            width: 14,
-            height: 14,
-            borderRadius: 7,
-            backgroundColor: i < value.length ? colors.primary : colors.border,
-          }}
-        />
-      ))}
-    </View>
-  );
-
-  const isEnterValid = pin.length === PIN_LENGTH;
-  const isConfirmValid = confirmPin.length === PIN_LENGTH;
-  const isButtonEnabled = step === "enter" ? isEnterValid : isConfirmValid;
+  const currentPin = step === "enter" ? pin : confirmPin;
+  const isButtonEnabled = currentPin.length === PIN_LENGTH;
 
   /* ---------------- UI ---------------- */
 
@@ -181,7 +144,7 @@ export default function PinSetupScreen({
 
       {/* PIN DOTS */}
       <View style={{ paddingVertical: 40 }}>
-        {renderPinDots(step === "enter" ? pin : confirmPin)}
+        <PinDots pin={currentPin} />
       </View>
 
       {/* ERROR */}
@@ -200,72 +163,8 @@ export default function PinSetupScreen({
       )}
 
       {/* NUMBER PAD */}
-      <View
-        style={{ flex: 1, paddingHorizontal: 24, justifyContent: "center" }}
-      >
-        <View style={{ gap: 16 }}>
-          {[
-            ["1", "2", "3"],
-            ["4", "5", "6"],
-            ["7", "8", "9"],
-            ["", "0", "delete"],
-          ].map((row, rowIndex) => (
-            <View key={rowIndex} style={{ flexDirection: "row", gap: 16 }}>
-              {row.map((key, colIndex) => {
-                if (key === "")
-                  return <View key={colIndex} style={{ flex: 1 }} />;
-
-                if (key === "delete") {
-                  return (
-                    <TouchableOpacity
-                      key={colIndex}
-                      onPress={handleDelete}
-                      style={{
-                        flex: 1,
-                        height: 72,
-                        borderRadius: 12,
-                        backgroundColor: colors.card,
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}
-                    >
-                      <Ionicons
-                        name="backspace-outline"
-                        size={28}
-                        color={colors.text}
-                      />
-                    </TouchableOpacity>
-                  );
-                }
-
-                return (
-                  <TouchableOpacity
-                    key={colIndex}
-                    onPress={() => handlePinInput(key)}
-                    style={{
-                      flex: 1,
-                      height: 72,
-                      borderRadius: 12,
-                      backgroundColor: colors.card,
-                      justifyContent: "center",
-                      alignItems: "center",
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 28,
-                        fontWeight: "600",
-                        color: colors.text,
-                      }}
-                    >
-                      {key}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ))}
-        </View>
+      <View style={{ flex: 1, paddingHorizontal: 24, justifyContent: "center" }}>
+        <PinPad onPress={handlePinInput} onDelete={handleDelete} />
       </View>
 
       {/* CONTINUE BUTTON */}
@@ -299,18 +198,9 @@ export default function PinSetupScreen({
         {onSkip && step === "enter" && (
           <TouchableOpacity
             onPress={onSkip}
-            style={{
-              height: 52,
-              justifyContent: "center",
-              alignItems: "center",
-            }}
+            style={{ height: 52, justifyContent: "center", alignItems: "center" }}
           >
-            <Text
-              style={{
-                fontSize: 16,
-                color: colors.subText,
-              }}
-            >
+            <Text style={{ fontSize: 16, color: colors.subText }}>
               Skip for now
             </Text>
           </TouchableOpacity>

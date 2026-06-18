@@ -2,10 +2,12 @@ import { decryptWithMasterKey, encryptWithMasterKey, getOrCreateMasterKey } from
 import { createOrUpdateGistBackup } from "./githubBackup";
 import { Storage } from "./storage";
 
-const USER_ACCOUNT_KEYS = "userAccountKeys";
-const GITHUB_TOKEN_KEY = "github_token";
-const BACKUP_GIST_ID_KEY = "backup_gist_id";
-const AUTO_SYNC_ENABLED_KEY = "auto_sync_enabled";
+import {
+  AUTO_SYNC_ENABLED_KEY,
+  BACKUP_GIST_ID_KEY,
+  GITHUB_PAT_KEY as GITHUB_TOKEN_KEY,
+  USER_ACCOUNT_KEYS,
+} from "./constants";
 
 // Use environment-agnostic timer types
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;

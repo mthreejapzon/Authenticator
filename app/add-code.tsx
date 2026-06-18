@@ -1,15 +1,17 @@
-import { useTheme } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import * as OTPAuth from "otpauth";
 import { useState } from "react";
-import { Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
+import { useTheme } from "./context/ThemeContext";
+import { USER_ACCOUNT_KEYS } from "./utils/constants";
+import { showAlert } from "./utils/alert";
 import { Storage } from "./utils/storage";
 
 export default function AddCode() {
   const router = useRouter();
   const [code, setCode] = useState<string | undefined>(undefined);
-  const [keyType, setKeyType] = useState(null);
+  const [keyType, setKeyType] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const { colors } = useTheme();
 
@@ -19,18 +21,21 @@ export default function AddCode() {
   ];
 
   async function handleSubmit() {
-    if (!code || !name || !keyType) return alert("Please fill in all fields");
-    if (code.match(/[^A-Za-z2-7]/))
-      return alert("The key you entered is not valid");
+    if (!code || !name || !keyType) {
+      return showAlert("Missing fields", "Please fill in all fields");
+    }
+    if (code.match(/[^A-Za-z2-7]/)) {
+      return showAlert("Invalid key", "The key you entered is not valid");
+    }
 
     const OTP = keyType === "counter" ? OTPAuth.HOTP : OTPAuth.TOTP;
     const otp = new OTP({
-      issuer: "ACME",
+      issuer: name,
       label: name,
       secret: code,
     });
 
-    saveDataToStorage({ name, value: OTPAuth.URI.stringify(otp) });
+    await saveDataToStorage({ name, value: OTPAuth.URI.stringify(otp) });
 
     // Redirect back to home page
     router.dismissAll();
@@ -38,30 +43,13 @@ export default function AddCode() {
   }
 
   async function saveDataToStorage(authData: { name: string; value: string }) {
-    const storageKey = Math.random().toString(36).substring(2);
+    const storageKey = `account_${Date.now()}_${Math.random().toString(36).substring(2)}`;
 
-    // We're saving two things:
-    // 1. A list of all user account keys (so we can show them on the home screen)
-    // 2. The actual auth data, stored using a unique key
-    //
-    //
-    // userAccountKeys: ["asdf1234", "qwer4567"]
-    // asdf1234: { name: "My Account", data: "otpauth://totp/..." }
-    // qwer4567: { name: "Another Account", data: "otpauth://totp/..." }
+    const storedKeys = await Storage.getItemAsync(USER_ACCOUNT_KEYS);
+    const updatedKeys = storedKeys ? JSON.parse(storedKeys) : [];
+    updatedKeys.push(storageKey);
 
-    // Store the new key in an array of user account keys
-
-    await Storage.getItemAsync("userAccountKeys").then(async (storedKeys) => {
-      const updatedKeys = storedKeys ? JSON.parse(storedKeys) : [];
-      updatedKeys.push(storageKey);
-
-      await Storage.setItemAsync(
-        "userAccountKeys",
-        JSON.stringify(updatedKeys),
-      );
-    });
-
-    // Store the actual auth data using the generated key
+    await Storage.setItemAsync(USER_ACCOUNT_KEYS, JSON.stringify(updatedKeys));
     await Storage.setItemAsync(storageKey, JSON.stringify(authData));
   }
 
@@ -76,60 +64,67 @@ export default function AddCode() {
     >
       <View>
         <View style={{ width: "100%", alignSelf: "center" }}>
-          <Text style={{ marginBottom: 4, marginTop: 15 }}>Account Name</Text>
+          <Text style={{ marginBottom: 4, marginTop: 15, color: colors.text }}>
+            Account Name
+          </Text>
           <TextInput
-            placeholder="Enter a name for this QR"
-            placeholderTextColor="gray"
+            placeholder="Enter a name for this account"
+            placeholderTextColor={colors.subText}
             onChangeText={setName}
             style={{
               height: 40,
-              borderColor: colors.border,
+              borderColor: colors.inputBorder,
               borderWidth: 1,
               marginBottom: 12,
               padding: 10,
               borderRadius: 8,
-              backgroundColor: colors.background,
+              backgroundColor: colors.input,
+              color: colors.text,
             }}
           />
 
-          <Text style={{ marginBottom: 4, marginTop: 15 }}>Your Key</Text>
+          <Text style={{ marginBottom: 4, marginTop: 15, color: colors.text }}>
+            Your Key
+          </Text>
           <TextInput
             placeholder="Enter code"
-            placeholderTextColor="gray"
+            placeholderTextColor={colors.subText}
             onChangeText={setCode}
             style={{
               height: 40,
-              borderColor: "gray",
+              borderColor: colors.inputBorder,
               borderWidth: 1,
               marginBottom: 12,
               padding: 10,
               borderRadius: 8,
-              backgroundColor: "white",
+              backgroundColor: colors.input,
+              color: colors.text,
             }}
           />
 
-          <Text style={{ marginBottom: 4, marginTop: 15 }}>Type of key</Text>
+          <Text style={{ marginBottom: 4, marginTop: 15, color: colors.text }}>
+            Type of key
+          </Text>
           <Dropdown
             style={{
               height: 40,
-              borderColor: "gray",
+              borderColor: colors.inputBorder,
               borderWidth: 1,
               borderRadius: 8,
-              backgroundColor: "white",
+              backgroundColor: colors.input,
               paddingHorizontal: 10,
               width: "100%",
             }}
             containerStyle={{
               borderRadius: 8,
-              backgroundColor: "white",
-              position: "relative",
+              backgroundColor: colors.card,
             }}
             itemTextStyle={{
-              color: "black",
+              color: colors.text,
               fontSize: 16,
             }}
             selectedTextStyle={{
-              color: "#007AFF",
+              color: colors.otpPrimary,
               fontWeight: "bold",
               fontSize: 16,
             }}
@@ -137,22 +132,18 @@ export default function AddCode() {
             labelField="label"
             valueField="value"
             placeholder="Select option"
+            placeholderStyle={{ color: colors.subText }}
             value={keyType}
             onChange={(item) => setKeyType(item.value)}
           />
         </View>
       </View>
 
-      <View
-        style={{
-          alignItems: "center",
-          marginBottom: 25,
-        }}
-      >
+      <View style={{ alignItems: "center", marginBottom: 25 }}>
         <TouchableOpacity
           onPress={handleSubmit}
           style={{
-            backgroundColor: "#007AFF",
+            backgroundColor: colors.primary,
             paddingVertical: 12,
             paddingHorizontal: 32,
             borderRadius: 8,
@@ -161,7 +152,7 @@ export default function AddCode() {
           }}
         >
           <Text
-            style={{ color: colors.text, fontWeight: "bold", fontSize: 16 }}
+            style={{ color: colors.background, fontWeight: "bold", fontSize: 16 }}
           >
             Submit
           </Text>

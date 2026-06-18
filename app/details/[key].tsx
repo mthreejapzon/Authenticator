@@ -14,6 +14,7 @@ import {
   Linking,
   Platform,
   ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -26,6 +27,7 @@ import { CustomField, useForm } from "../context/FormContext";
 import { useTheme } from "../context/ThemeContext";
 import { decryptText } from "../utils/crypto";
 import { Clipboard, Storage } from "../utils/storage";
+import { GITHUB_PAT_KEY, USER_ACCOUNT_KEYS } from "../utils/constants";
 
 export default function DetailsScreen() {
   const router = useRouter();
@@ -126,7 +128,7 @@ export default function DetailsScreen() {
         const parsed = JSON.parse(storedData);
 
         // Get GitHub token for decryption
-        const pat = await Storage.getItemAsync("github_token");
+        const pat = await Storage.getItemAsync(GITHUB_PAT_KEY);
 
         // Validate PAT more thoroughly
         if (!pat || pat.trim().length === 0) {
@@ -162,7 +164,7 @@ export default function DetailsScreen() {
           if (parsed.password) {
             try {
               decryptedPw = await decryptText(parsed.password, pat);
-              console.log("✅ Password decrypted successfully");
+
             } catch (e) {
               console.error("❌ Password decrypt failed:", e);
               hasDecryptionError = true;
@@ -177,7 +179,7 @@ export default function DetailsScreen() {
           if (parsed.value) {
             try {
               decryptedOtpValue = await decryptText(parsed.value, pat);
-              console.log("✅ OTP secret decrypted successfully");
+
             } catch (e) {
               console.error("❌ OTP decrypt failed:", e);
               hasDecryptionError = true;
@@ -189,7 +191,7 @@ export default function DetailsScreen() {
           }
         } else if (!isEncrypted) {
           // Data is not encrypted, use as-is
-          console.log("ℹ️ Account data is not encrypted");
+
           decryptedPw = parsed.password || "";
           decryptedOtpValue = parsed.value || "";
         } else {
@@ -237,11 +239,10 @@ export default function DetailsScreen() {
         };
 
         setData(accountData);
-        setFormData(parsed);
-        setFormData({ customFields: decryptedCustomFields });
+        setFormData({ ...parsed, customFields: decryptedCustomFields });
+        setCustomFieldsData(decryptedCustomFields);
         setNotesText(parsed.notes || "");
         setDecryptedPassword(decryptedPw);
-        setCustomFieldsData(decryptedCustomFields);
 
         // Generate OTP if we have a secret
         if (decryptedOtpValue) {
@@ -360,11 +361,11 @@ export default function DetailsScreen() {
           onPress: async () => {
             try {
               // Remove from keys list
-              const storedKeys = await Storage.getItemAsync("userAccountKeys");
+              const storedKeys = await Storage.getItemAsync(USER_ACCOUNT_KEYS);
               const keys = storedKeys ? JSON.parse(storedKeys) : [];
               const updatedKeys = keys.filter((k: string) => k !== key);
               await Storage.setItemAsync(
-                "userAccountKeys",
+                USER_ACCOUNT_KEYS,
                 JSON.stringify(updatedKeys),
               );
 
@@ -461,10 +462,10 @@ export default function DetailsScreen() {
       {/* Custom Header */}
       <View
         style={{
-          borderBottomWidth: 0.613,
+          borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: colors.border,
           paddingTop: insets.top,
-          minHeight: 72.591,
+          minHeight: 72,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
@@ -566,7 +567,7 @@ export default function DetailsScreen() {
           {/* Account Header Section */}
           <View
             style={{
-              borderBottomWidth: 0.613,
+              borderBottomWidth: StyleSheet.hairlineWidth,
               borderBottomColor: colors.border,
               paddingBottom: 16,
               flexDirection: "row",
@@ -696,7 +697,7 @@ export default function DetailsScreen() {
               activeOpacity={0.8}
               style={{
                 borderRadius: 14,
-                padding: 24.609,
+                padding: 24,
                 backgroundColor: colors.input,
                 gap: 16,
               }}
@@ -880,7 +881,7 @@ export default function DetailsScreen() {
                       width: 48,
                       height: 44,
                       backgroundColor: colors.input,
-                      borderWidth: 0.613,
+                      borderWidth: StyleSheet.hairlineWidth,
                       borderColor: "rgba(0,0,0,0.1)",
                       borderRadius: 8,
                       alignItems: "center",
@@ -947,7 +948,7 @@ export default function DetailsScreen() {
                         width: 48,
                         height: 44,
                         backgroundColor: colors.input,
-                        borderWidth: 0.613,
+                        borderWidth: StyleSheet.hairlineWidth,
                         borderColor: "rgba(0,0,0,0.1)",
                         borderRadius: 8,
                         alignItems: "center",
@@ -969,7 +970,7 @@ export default function DetailsScreen() {
                         width: 48,
                         height: 44,
                         backgroundColor: colors.input,
-                        borderWidth: 0.613,
+                        borderWidth: StyleSheet.hairlineWidth,
                         borderColor: "rgba(0,0,0,0.1)",
                         borderRadius: 8,
                         alignItems: "center",
@@ -1129,7 +1130,7 @@ export default function DetailsScreen() {
                             width: 48,
                             height: 44,
                             backgroundColor: colors.input,
-                            borderWidth: 0.613,
+                            borderWidth: StyleSheet.hairlineWidth,
                             borderColor: "rgba(0,0,0,0.1)",
                             borderRadius: 8,
                             alignItems: "center",
@@ -1153,7 +1154,7 @@ export default function DetailsScreen() {
             {(data?.createdAt || data?.modifiedAt) && (
               <View
                 style={{
-                  borderTopWidth: 0.613,
+                  borderTopWidth: StyleSheet.hairlineWidth,
                   borderTopColor: colors.border,
                   paddingTop: 16.6,
                   gap: 4,

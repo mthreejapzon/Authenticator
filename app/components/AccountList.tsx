@@ -1,5 +1,6 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import { SectionList, Text, TouchableOpacity, View } from "react-native";
+import { SectionList, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useTheme } from "../context/ThemeContext";
 import AccountListItem from "./AccountListItem";
 
@@ -27,6 +28,7 @@ export default function AccountList(props: {
   const [sortMode, setSortMode] = useState<SortMode>("alphabetical");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [showSortSheet, setShowSortSheet] = useState(false);
 
   const activeFilterCount =
@@ -37,9 +39,21 @@ export default function AccountList(props: {
     new Set(accounts.flatMap((acc) => acc.data?.tags ?? [])),
   ).sort((a, b) => a.localeCompare(b));
 
-  const filteredAccounts = selectedTag
-    ? accounts.filter((acc) => acc.data?.tags?.includes(selectedTag))
+  // 1. Filter by search query (name or username)
+  const searchedAccounts = searchQuery.trim()
+    ? accounts.filter((acc) => {
+        const q = searchQuery.trim().toLowerCase();
+        return (
+          acc.data?.accountName?.toLowerCase().includes(q) ||
+          acc.data?.username?.toLowerCase().includes(q)
+        );
+      })
     : accounts;
+
+  // 2. Filter by selected tag
+  const filteredAccounts = selectedTag
+    ? searchedAccounts.filter((acc) => acc.data?.tags?.includes(selectedTag))
+    : searchedAccounts;
 
   const sortAccounts = (
     list: typeof accounts,
@@ -104,6 +118,46 @@ export default function AccountList(props: {
 
   return (
     <View style={{ flex: 1 }}>
+
+      {/* ── Search Bar ── */}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          backgroundColor: colors.input,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: colors.inputBorder,
+          paddingHorizontal: 12,
+          marginBottom: 8,
+          height: 44,
+          gap: 8,
+        }}
+      >
+        <Ionicons name="search-outline" size={18} color={colors.subText} />
+        <TextInput
+          placeholder="Search accounts..."
+          placeholderTextColor={colors.subText}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          style={{
+            flex: 1,
+            fontSize: 15,
+            color: colors.text,
+            paddingVertical: 0,
+          }}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={8}>
+            <Ionicons name="close-circle" size={18} color={colors.subText} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── Sort & Filter Row ── */}
       <View
         style={{
           flexDirection: "row",
@@ -186,33 +240,78 @@ export default function AccountList(props: {
         </TouchableOpacity>
       </View>
 
-      <SectionList
-        sections={sections}
-        renderItem={({ item }) => (
-          <AccountListItem account={item} onDelete={onDelete} />
-        )}
-        renderSectionHeader={({ section: { title } }) =>
-          title ? (
-            <View
-              style={{ paddingHorizontal: 4, paddingVertical: 8, marginTop: 8 }}
-            >
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: "600",
-                  color: colors.subText,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                }}
+      {/* ── Search empty state ── */}
+      {searchQuery.trim() !== "" && filteredAccounts.length === 0 ? (
+        <View
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            paddingBottom: 60,
+            gap: 8,
+          }}
+        >
+          <Ionicons name="search-outline" size={40} color={colors.subText} />
+          <Text
+            style={{
+              fontSize: 16,
+              fontWeight: "600",
+              color: colors.text,
+              marginTop: 4,
+            }}
+          >
+            No results found
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.subText, textAlign: "center" }}>
+            No accounts match{" "}
+            <Text style={{ fontWeight: "600" }}>"{searchQuery}"</Text>
+          </Text>
+          <TouchableOpacity
+            onPress={() => setSearchQuery("")}
+            style={{
+              marginTop: 8,
+              paddingHorizontal: 20,
+              paddingVertical: 10,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.card,
+            }}
+          >
+            <Text style={{ fontSize: 14, color: colors.subText, fontWeight: "500" }}>
+              Clear search
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <SectionList
+          sections={sections}
+          renderItem={({ item }) => (
+            <AccountListItem account={item} onDelete={onDelete} />
+          )}
+          renderSectionHeader={({ section: { title } }) =>
+            title ? (
+              <View
+                style={{ paddingHorizontal: 4, paddingVertical: 8, marginTop: 8 }}
               >
-                {title}
-              </Text>
-            </View>
-          ) : null
-        }
-        keyExtractor={(item) => item.key}
-        stickySectionHeadersEnabled={false}
-      />
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: "600",
+                    color: colors.subText,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  {title}
+                </Text>
+              </View>
+            ) : null
+          }
+          keyExtractor={(item) => item.key}
+          stickySectionHeadersEnabled={false}
+        />
+      )}
 
       {/* Sort & Filter Bottom Sheet */}
       {showSortSheet && (

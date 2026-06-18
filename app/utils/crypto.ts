@@ -2,11 +2,7 @@ import CryptoJS from "crypto-js";
 import { getRandomBytes } from "./cryptoPolyfill";
 import { Storage } from "./storage";
 
-/**
- * Storage key for the master encryption key (used for backups)
- */
-const MASTER_KEY_STORAGE_KEY = "encryptionMasterKey";
-const GITHUB_TOKEN_KEY = "github_token";
+import { GITHUB_PAT_KEY as GITHUB_TOKEN_KEY, MASTER_KEY_STORAGE_KEY } from "./constants";
 
 /**
  * Convert bytes → CryptoJS WordArray

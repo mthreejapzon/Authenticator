@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AccountList from "./components/AccountList";
 import { useTheme } from "./context/ThemeContext";
 import { Storage } from "./utils/storage";
+import { USER_ACCOUNT_KEYS } from "./utils/constants";
 
 export default function Index() {
   const navigation = useNavigation();
@@ -74,7 +75,7 @@ export default function Index() {
 
   const loadAccounts = useCallback(async () => {
     try {
-      const storedKeys = await Storage.getItemAsync("userAccountKeys");
+      const storedKeys = await Storage.getItemAsync(USER_ACCOUNT_KEYS);
       const keys = storedKeys ? JSON.parse(storedKeys) : [];
 
       setAccountKeys(keys);
@@ -118,7 +119,7 @@ export default function Index() {
 
       const updatedKeys = accountKeys.filter((k) => k !== key);
       await Storage.setItemAsync(
-        "userAccountKeys",
+        USER_ACCOUNT_KEYS,
         JSON.stringify(updatedKeys),
       );
 
