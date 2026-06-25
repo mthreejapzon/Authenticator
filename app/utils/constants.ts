@@ -25,6 +25,19 @@ export const APP_LOCKED_KEY = "app_locked";
 export const FAILED_ATTEMPTS_KEY = "failed_pin_attempts";
 export const LOCKOUT_UNTIL_KEY = "lockout_until";
 
+/**
+ * Storage key for the auto-lock timeout setting.
+ * Value stored as a string number (milliseconds). "0" means lock immediately
+ * on background; a very large value (or absent) means "Never".
+ */
+export const AUTO_LOCK_TIMEOUT_KEY = "auto_lock_timeout_ms";
+
+/** Timestamp (ms) of the last moment the app was in the foreground. */
+export const LAST_ACTIVE_AT_KEY = "last_active_at";
+
+/** Default: lock after 1 minute of being in the background. */
+export const AUTO_LOCK_TIMEOUT_DEFAULT_MS = 60_000;
+
 /** Number of digits in the app PIN. */
 export const PIN_LENGTH = 6;
 

@@ -1,6 +1,11 @@
 import CryptoJS from "crypto-js";
 import { getRandomBytes } from "./cryptoPolyfill";
 import { Storage } from "./storage";
+import {
+  AUTO_LOCK_TIMEOUT_DEFAULT_MS,
+  AUTO_LOCK_TIMEOUT_KEY,
+  LAST_ACTIVE_AT_KEY,
+} from "./constants";
 
 /**
  * Storage keys for PIN security
@@ -234,4 +239,66 @@ export async function removePin(currentPin: string): Promise<boolean> {
 export async function getFailedAttempts(): Promise<number> {
   const failedStr = await Storage.getItemAsync(FAILED_ATTEMPTS_KEY);
   return failedStr ? parseInt(failedStr, 10) : 0;
+}
+
+// ── Auto-lock timeout ─────────────────────────────────────────────────────────
+
+/**
+ * Read the user's configured auto-lock timeout (ms).
+ * Returns AUTO_LOCK_TIMEOUT_DEFAULT_MS when no setting has been saved yet.
+ * A value of Number.MAX_SAFE_INTEGER means "Never".
+ */
+export async function getAutoLockTimeout(): Promise<number> {
+  try {
+    const raw = await Storage.getItemAsync(AUTO_LOCK_TIMEOUT_KEY);
+    if (raw === null) return AUTO_LOCK_TIMEOUT_DEFAULT_MS;
+    const parsed = parseInt(raw, 10);
+    return isNaN(parsed) ? AUTO_LOCK_TIMEOUT_DEFAULT_MS : parsed;
+  } catch {
+    return AUTO_LOCK_TIMEOUT_DEFAULT_MS;
+  }
+}
+
+/**
+ * Persist the user's chosen auto-lock timeout.
+ * Pass Number.MAX_SAFE_INTEGER to disable ("Never").
+ */
+export async function setAutoLockTimeout(ms: number): Promise<void> {
+  await Storage.setItemAsync(AUTO_LOCK_TIMEOUT_KEY, String(ms));
+  console.log(`⏱️ Auto-lock timeout set to ${ms} ms`);
+}
+
+/**
+ * Record the current timestamp as the last moment the app was active.
+ * Call this whenever the app enters the foreground or on unlock.
+ */
+export async function recordLastActiveAt(): Promise<void> {
+  await Storage.setItemAsync(LAST_ACTIVE_AT_KEY, String(Date.now()));
+}
+
+/**
+ * Determine whether the app should lock when returning to the foreground.
+ * Returns true only if:
+ *  - A PIN is configured, AND
+ *  - The time elapsed since the last active timestamp exceeds the timeout.
+ */
+export async function shouldLockOnForeground(): Promise<boolean> {
+  try {
+    const timeoutMs = await getAutoLockTimeout();
+
+    // "Never" — skip the check entirely
+    if (timeoutMs >= Number.MAX_SAFE_INTEGER) return false;
+
+    const raw = await Storage.getItemAsync(LAST_ACTIVE_AT_KEY);
+    // No timestamp recorded yet — treat as if just unlocked
+    if (raw === null) return false;
+
+    const lastActiveAt = parseInt(raw, 10);
+    if (isNaN(lastActiveAt)) return false;
+
+    const elapsed = Date.now() - lastActiveAt;
+    return elapsed >= timeoutMs;
+  } catch {
+    return false;
+  }
 }

@@ -5,7 +5,13 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import PinUnlockScreen from "./components/PinUnlockScreen";
 import { FormProvider } from "./context/FormContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
-import { hasPin, isAppLocked, lockApp } from "./utils/pinSecurity";
+import {
+  hasPin,
+  isAppLocked,
+  lockApp,
+  recordLastActiveAt,
+  shouldLockOnForeground,
+} from "./utils/pinSecurity";
 import { GITHUB_PAT_KEY } from "./utils/constants";
 
 export default function RootLayout() {
@@ -45,7 +51,7 @@ function RootContent() {
     checkPinStatus();
   }, []);
 
-  /* ── AppState: lock on background, re-check on foreground ────────────── */
+  /* ── AppState: record active timestamp on background, re-check on foreground ── */
   useEffect(() => {
     const subscription = AppState.addEventListener(
       "change",
@@ -53,7 +59,9 @@ function RootContent() {
         if (nextAppState === "background" || nextAppState === "inactive") {
           const pinExists = await hasPin();
           if (pinExists) {
-            await lockApp();
+            // Snapshot the moment we left the foreground so we can
+            // measure elapsed time when we come back.
+            await recordLastActiveAt();
           }
         } else if (nextAppState === "active") {
           await checkPinStatus();
@@ -107,8 +115,22 @@ function RootContent() {
     try {
       const pinExists = await hasPin();
       if (pinExists) {
+        // If the app is already flagged as locked (e.g. first launch), show PIN.
         const locked = await isAppLocked();
-        setLockState(locked ? "locked" : "unlocked");
+        if (locked) {
+          setLockState("locked");
+          return;
+        }
+        // Otherwise apply the timeout check: did we exceed the idle threshold?
+        const timedOut = await shouldLockOnForeground();
+        if (timedOut) {
+          await lockApp();
+          setLockState("locked");
+        } else {
+          // Still within the grace period — record new active timestamp and stay unlocked.
+          await recordLastActiveAt();
+          setLockState("unlocked");
+        }
       } else {
         setLockState("unlocked");
       }
@@ -138,7 +160,13 @@ function RootContent() {
 
   if (lockState === "locked") {
     return (
-      <PinUnlockScreen onUnlock={() => setLockState("unlocked")} />
+      <PinUnlockScreen
+        onUnlock={async () => {
+          // Reset the idle timer on every successful unlock
+          await recordLastActiveAt();
+          setLockState("unlocked");
+        }}
+      />
     );
   }
 

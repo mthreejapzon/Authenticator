@@ -28,6 +28,8 @@ import { Storage } from "./utils/storage";
 import {
   BACKUP_GIST_ID_KEY,
   BACKUP_HISTORY_KEY,
+  AUTO_LOCK_TIMEOUT_DEFAULT_MS,
+  AUTO_LOCK_TIMEOUT_KEY,
   CLIPBOARD_CLEAR_DELAY_DEFAULT_MS,
   CLIPBOARD_CLEAR_DELAY_KEY,
   GITHUB_PAT_KEY as GITHUB_TOKEN_KEY,
@@ -77,6 +79,11 @@ export default function SettingsScreen() {
    * 0 = disabled. Defaults to CLIPBOARD_CLEAR_DELAY_DEFAULT_MS on first run.
    */
   const [clipboardClearDelay, setClipboardClearDelay] = useState<number>(CLIPBOARD_CLEAR_DELAY_DEFAULT_MS);
+  /**
+   * Auto-lock timeout in ms.
+   * Number.MAX_SAFE_INTEGER = Never. Defaults to AUTO_LOCK_TIMEOUT_DEFAULT_MS.
+   */
+  const [autoLockTimeout, setAutoLockTimeout] = useState<number>(AUTO_LOCK_TIMEOUT_DEFAULT_MS);
 
   // Hide default header and use custom header
   useLayoutEffect(() => {
@@ -120,6 +127,32 @@ export default function SettingsScreen() {
       }
     })();
   }, []);
+
+  // Load auto-lock timeout
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await Storage.getItemAsync(AUTO_LOCK_TIMEOUT_KEY);
+        if (raw !== null) {
+          const parsed = parseInt(raw, 10);
+          setAutoLockTimeout(isNaN(parsed) ? AUTO_LOCK_TIMEOUT_DEFAULT_MS : parsed);
+        }
+      } catch (err) {
+        console.error("Failed to load auto-lock timeout:", err);
+      }
+    })();
+  }, []);
+
+  /** Persist the user's chosen auto-lock timeout. */
+  const handleAutoLockTimeoutChange = async (ms: number) => {
+    setAutoLockTimeout(ms);
+    try {
+      const { setAutoLockTimeout: persistTimeout } = await import("./utils/pinSecurity");
+      await persistTimeout(ms);
+    } catch (err) {
+      console.error("Failed to save auto-lock timeout:", err);
+    }
+  };
 
   /** Persist the user's chosen clipboard auto-clear delay. */
   const handleClipboardClearDelayChange = async (delayMs: number) => {
@@ -1806,6 +1839,66 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+        </View>
+
+        {/* Divider (clipboard → auto-lock) */}
+        <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 16 }} />
+
+        {/* Auto-Lock Timeout */}
+        <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 8 }}>
+            <Ionicons name="timer-outline" size={16} color={colors.text} />
+            <Text style={{ fontSize: 14, fontWeight: "500", color: colors.text }}>
+              Auto-lock timeout
+            </Text>
+          </View>
+          <Text style={{ fontSize: 12, color: colors.subText, marginBottom: 12, lineHeight: 17 }}>
+            Lock the app automatically after it has been in the background for this long.
+          </Text>
+          {/* Segmented timeout picker */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {([
+              { label: "Immediately", value: 0 },
+              { label: "1 min",  value: 60_000 },
+              { label: "5 min",  value: 300_000 },
+              { label: "15 min", value: 900_000 },
+              { label: "Never",  value: Number.MAX_SAFE_INTEGER },
+            ] as { label: string; value: number }[]).map(({ label, value }) => {
+              const active = autoLockTimeout === value;
+              return (
+                <TouchableOpacity
+                  key={label}
+                  onPress={() => hasPinConfigured && handleAutoLockTimeoutChange(value)}
+                  style={{
+                    paddingHorizontal: 14,
+                    height: 36,
+                    borderRadius: 8,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: active ? colors.primary : colors.background,
+                    borderWidth: 0.6,
+                    borderColor: active ? colors.primary : colors.border,
+                    opacity: hasPinConfigured ? 1 : 0.4,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "600",
+                      color: active ? colors.background : colors.subText,
+                    }}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {!hasPinConfigured && (
+            <Text style={{ fontSize: 11, color: colors.subText, marginTop: 8 }}>
+              Set up a PIN first to enable auto-lock.
+            </Text>
+          )}
         </View>
 
         {/* Divider */}
