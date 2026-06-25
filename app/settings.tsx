@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRouter } from "expo-router";
-import React, { useEffect, useLayoutEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   Platform,
   ScrollView,
@@ -18,6 +19,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import PinSetupScreen from "./components/PinSetupScreen";
 import PinVerificationScreen from "./components/PinVerificationScreen";
 import { useTheme } from "./context/ThemeContext";
+import { showAlert } from "./utils/alert";
+import { parseBackupCipher } from "./utils/backupUtils";
+import {
+  AUTO_LOCK_TIMEOUT_DEFAULT_MS,
+  AUTO_LOCK_TIMEOUT_KEY,
+  BACKUP_GIST_ID_KEY,
+  BACKUP_HISTORY_KEY,
+  CLIPBOARD_CLEAR_DELAY_DEFAULT_MS,
+  CLIPBOARD_CLEAR_DELAY_KEY,
+  GITHUB_PAT_KEY as GITHUB_TOKEN_KEY,
+  LAST_BACKUP_KEY,
+  USER_ACCOUNT_KEYS,
+} from "./utils/constants";
 import {
   decryptWithMasterKey,
   encryptWithMasterKey,
@@ -25,19 +39,6 @@ import {
 } from "./utils/crypto";
 import { hasPin } from "./utils/pinSecurity";
 import { Storage } from "./utils/storage";
-import {
-  BACKUP_GIST_ID_KEY,
-  BACKUP_HISTORY_KEY,
-  AUTO_LOCK_TIMEOUT_DEFAULT_MS,
-  AUTO_LOCK_TIMEOUT_KEY,
-  CLIPBOARD_CLEAR_DELAY_DEFAULT_MS,
-  CLIPBOARD_CLEAR_DELAY_KEY,
-  GITHUB_PAT_KEY as GITHUB_TOKEN_KEY,
-  LAST_BACKUP_KEY,
-  USER_ACCOUNT_KEYS,
-} from "./utils/constants";
-import { showAlert } from "./utils/alert";
-import { parseBackupCipher } from "./utils/backupUtils";
 
 type BackupHistoryItem = {
   id: string;
@@ -68,7 +69,8 @@ export default function SettingsScreen() {
   const [showPinVerification, setShowPinVerification] = useState(false);
   const [isRemovingPin, setIsRemovingPin] = useState(false);
   const [showThemeOptions, setShowThemeOptions] = useState(false);
-  const [isBiometricsSupportedByDevice, setIsBiometricsSupportedByDevice] = useState(false);
+  const [isBiometricsSupportedByDevice, setIsBiometricsSupportedByDevice] =
+    useState(false);
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
   const [biometricsName, setBiometricsName] = useState("Biometrics");
   const { themeMode, setThemeMode, colors } = useTheme();
@@ -78,12 +80,19 @@ export default function SettingsScreen() {
    * Clipboard auto-clear delay in ms.
    * 0 = disabled. Defaults to CLIPBOARD_CLEAR_DELAY_DEFAULT_MS on first run.
    */
-  const [clipboardClearDelay, setClipboardClearDelay] = useState<number>(CLIPBOARD_CLEAR_DELAY_DEFAULT_MS);
+  const [clipboardClearDelay, setClipboardClearDelay] = useState<number>(
+    CLIPBOARD_CLEAR_DELAY_DEFAULT_MS,
+  );
   /**
    * Auto-lock timeout in ms.
    * Number.MAX_SAFE_INTEGER = Never. Defaults to AUTO_LOCK_TIMEOUT_DEFAULT_MS.
    */
-  const [autoLockTimeout, setAutoLockTimeout] = useState<number>(AUTO_LOCK_TIMEOUT_DEFAULT_MS);
+  const [autoLockTimeout, setAutoLockTimeout] = useState<number>(
+    AUTO_LOCK_TIMEOUT_DEFAULT_MS,
+  );
+  const [showAutoLockDropdown, setShowAutoLockDropdown] = useState(false);
+  const dropdownAnim = useRef(new Animated.Value(0)).current;
+  const chevronAnim = useRef(new Animated.Value(0)).current;
 
   // Hide default header and use custom header
   useLayoutEffect(() => {
@@ -98,8 +107,11 @@ export default function SettingsScreen() {
       const pinExists = await hasPin();
       setHasPinConfigured(pinExists);
 
-      const { isBiometricsSupported, isBiometricsEnabled, getSupportedBiometryNames } =
-        await import("./utils/biometrics");
+      const {
+        isBiometricsSupported,
+        isBiometricsEnabled,
+        getSupportedBiometryNames,
+      } = await import("./utils/biometrics");
       const supported = await isBiometricsSupported();
       setIsBiometricsSupportedByDevice(supported);
       if (supported) {
@@ -120,7 +132,9 @@ export default function SettingsScreen() {
         const raw = await Storage.getItemAsync(CLIPBOARD_CLEAR_DELAY_KEY);
         if (raw !== null) {
           const parsed = parseInt(raw, 10);
-          setClipboardClearDelay(isNaN(parsed) ? CLIPBOARD_CLEAR_DELAY_DEFAULT_MS : parsed);
+          setClipboardClearDelay(
+            isNaN(parsed) ? CLIPBOARD_CLEAR_DELAY_DEFAULT_MS : parsed,
+          );
         }
       } catch (err) {
         console.error("Failed to load clipboard clear delay:", err);
@@ -135,7 +149,9 @@ export default function SettingsScreen() {
         const raw = await Storage.getItemAsync(AUTO_LOCK_TIMEOUT_KEY);
         if (raw !== null) {
           const parsed = parseInt(raw, 10);
-          setAutoLockTimeout(isNaN(parsed) ? AUTO_LOCK_TIMEOUT_DEFAULT_MS : parsed);
+          setAutoLockTimeout(
+            isNaN(parsed) ? AUTO_LOCK_TIMEOUT_DEFAULT_MS : parsed,
+          );
         }
       } catch (err) {
         console.error("Failed to load auto-lock timeout:", err);
@@ -147,7 +163,8 @@ export default function SettingsScreen() {
   const handleAutoLockTimeoutChange = async (ms: number) => {
     setAutoLockTimeout(ms);
     try {
-      const { setAutoLockTimeout: persistTimeout } = await import("./utils/pinSecurity");
+      const { setAutoLockTimeout: persistTimeout } =
+        await import("./utils/pinSecurity");
       await persistTimeout(ms);
     } catch (err) {
       console.error("Failed to save auto-lock timeout:", err);
@@ -177,7 +194,6 @@ export default function SettingsScreen() {
     })();
   }, []);
 
-
   // Toggle auto-restore function
   const toggleAutoRestore = async (enabled: boolean) => {
     setAutoRestoreEnabled(enabled);
@@ -202,16 +218,23 @@ export default function SettingsScreen() {
 
   const handleToggleBiometrics = async (value: boolean) => {
     if (!hasPinConfigured) {
-      Alert.alert("PIN Required", "You must configure a Security PIN before enabling biometric unlock.");
+      Alert.alert(
+        "PIN Required",
+        "You must configure a Security PIN before enabling biometric unlock.",
+      );
       return;
     }
 
     try {
-      const { setBiometricsEnabled: saveBiometrics, authenticateWithBiometrics } =
-        await import("./utils/biometrics");
+      const {
+        setBiometricsEnabled: saveBiometrics,
+        authenticateWithBiometrics,
+      } = await import("./utils/biometrics");
 
       if (value) {
-        const success = await authenticateWithBiometrics(`Confirm enabling ${biometricsName}`);
+        const success = await authenticateWithBiometrics(
+          `Confirm enabling ${biometricsName}`,
+        );
         if (success) {
           await saveBiometrics(true);
           setBiometricsEnabled(true);
@@ -1671,7 +1694,11 @@ export default function SettingsScreen() {
               >
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <Ionicons
-                    name={biometricsName.includes("Face") ? "scan-outline" : "finger-print-outline"}
+                    name={
+                      biometricsName.includes("Face")
+                        ? "scan-outline"
+                        : "finger-print-outline"
+                    }
                     size={16}
                     color={colors.text}
                   />
@@ -1789,27 +1816,46 @@ export default function SettingsScreen() {
         </View>
 
         {/* Divider (security → clipboard) */}
-        <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 16 }} />
+        <View style={{ marginVertical: 20 }} />
 
         {/* Clipboard Auto-Clear */}
         <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 8 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginBottom: 10,
+              gap: 8,
+            }}
+          >
             <Ionicons name="clipboard-outline" size={16} color={colors.text} />
-            <Text style={{ fontSize: 14, fontWeight: "500", color: colors.text }}>
+            <Text
+              style={{ fontSize: 14, fontWeight: "500", color: colors.text }}
+            >
               Clear clipboard after copy
             </Text>
           </View>
-          <Text style={{ fontSize: 12, color: colors.subText, marginBottom: 12, lineHeight: 17 }}>
-            Automatically overwrites the clipboard after you copy a password or OTP code.
+          <Text
+            style={{
+              fontSize: 12,
+              color: colors.subText,
+              marginBottom: 12,
+              lineHeight: 17,
+            }}
+          >
+            Automatically overwrites the clipboard after you copy a password or
+            OTP code.
           </Text>
           {/* Segmented delay picker */}
           <View style={{ flexDirection: "row", gap: 8 }}>
-            {([
-              { label: "Off", value: 0 },
-              { label: "30s", value: 30_000 },
-              { label: "60s", value: 60_000 },
-              { label: "2 min", value: 120_000 },
-            ] as { label: string; value: number }[]).map(({ label, value }) => {
+            {(
+              [
+                { label: "Off", value: 0 },
+                { label: "30s", value: 30_000 },
+                { label: "60s", value: 60_000 },
+                { label: "2 min", value: 120_000 },
+              ] as { label: string; value: number }[]
+            ).map(({ label, value }) => {
               const active = clipboardClearDelay === value;
               return (
                 <TouchableOpacity
@@ -1821,7 +1867,9 @@ export default function SettingsScreen() {
                     borderRadius: 8,
                     alignItems: "center",
                     justifyContent: "center",
-                    backgroundColor: active ? colors.primary : colors.background,
+                    backgroundColor: active
+                      ? colors.primary
+                      : colors.background,
                     borderWidth: 0.6,
                     borderColor: active ? colors.primary : colors.border,
                   }}
@@ -1842,63 +1890,209 @@ export default function SettingsScreen() {
         </View>
 
         {/* Divider (clipboard → auto-lock) */}
-        <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 16 }} />
+        <View
+          style={{
+            marginVertical: 20,
+          }}
+        />
 
         {/* Auto-Lock Timeout */}
-        <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 8 }}>
-            <Ionicons name="timer-outline" size={16} color={colors.text} />
-            <Text style={{ fontSize: 14, fontWeight: "500", color: colors.text }}>
-              Auto-lock timeout
-            </Text>
-          </View>
-          <Text style={{ fontSize: 12, color: colors.subText, marginBottom: 12, lineHeight: 17 }}>
-            Lock the app automatically after it has been in the background for this long.
-          </Text>
-          {/* Segmented timeout picker */}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {([
-              { label: "Immediately", value: 0 },
-              { label: "1 min",  value: 60_000 },
-              { label: "5 min",  value: 300_000 },
-              { label: "15 min", value: 900_000 },
-              { label: "Never",  value: Number.MAX_SAFE_INTEGER },
-            ] as { label: string; value: number }[]).map(({ label, value }) => {
-              const active = autoLockTimeout === value;
-              return (
-                <TouchableOpacity
-                  key={label}
-                  onPress={() => hasPinConfigured && handleAutoLockTimeoutChange(value)}
-                  style={{
-                    paddingHorizontal: 14,
-                    height: 36,
-                    borderRadius: 8,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: active ? colors.primary : colors.background,
-                    borderWidth: 0.6,
-                    borderColor: active ? colors.primary : colors.border,
-                    opacity: hasPinConfigured ? 1 : 0.4,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 13,
-                      fontWeight: "600",
-                      color: active ? colors.background : colors.subText,
-                    }}
-                  >
-                    {label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          {!hasPinConfigured && (
-            <Text style={{ fontSize: 11, color: colors.subText, marginTop: 8 }}>
-              Set up a PIN first to enable auto-lock.
-            </Text>
-          )}
+        {(() => {
+          const AUTO_LOCK_OPTIONS = [
+            { label: "Immediately", value: 0 },
+            { label: "1 minute",    value: 60_000 },
+            { label: "5 minutes",   value: 300_000 },
+            { label: "15 minutes",  value: 900_000 },
+            { label: "Never",       value: Number.MAX_SAFE_INTEGER },
+          ] as { label: string; value: number }[];
+
+          const activeOption =
+            AUTO_LOCK_OPTIONS.find((o) => o.value === autoLockTimeout)
+            ?? AUTO_LOCK_OPTIONS[1];
+
+          const toggleDropdown = () => {
+            if (!hasPinConfigured) return;
+            const opening = !showAutoLockDropdown;
+            setShowAutoLockDropdown(opening);
+            Animated.parallel([
+              Animated.timing(dropdownAnim, {
+                toValue: opening ? 1 : 0,
+                duration: 220,
+                useNativeDriver: false,
+              }),
+              Animated.timing(chevronAnim, {
+                toValue: opening ? 1 : 0,
+                duration: 220,
+                useNativeDriver: true,
+              }),
+            ]).start();
+          };
+
+          const selectOption = (value: number) => {
+            handleAutoLockTimeoutChange(value);
+            setShowAutoLockDropdown(false);
+            Animated.parallel([
+              Animated.timing(dropdownAnim, { toValue: 0, duration: 180, useNativeDriver: false }),
+              Animated.timing(chevronAnim,  { toValue: 0, duration: 180, useNativeDriver: true }),
+            ]).start();
+          };
+
+          // Each option row is 44 px; animate the height from 0 → total
+          const menuHeight = dropdownAnim.interpolate({
+            inputRange:  [0, 1],
+            outputRange: [0, AUTO_LOCK_OPTIONS.length * 44],
+          });
+
+          const chevronRotation = chevronAnim.interpolate({
+            inputRange:  [0, 1],
+            outputRange: ["0deg", "180deg"],
+          });
+
+          return (
+            <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8, gap: 8 }}>
+                <Ionicons name="timer-outline" size={16} color={colors.text} />
+                <Text style={{ fontSize: 14, fontWeight: "500", color: colors.text }}>
+                  Auto-lock timeout
+                </Text>
+              </View>
+              <Text style={{ fontSize: 12, color: colors.subText, marginBottom: 10, lineHeight: 17 }}>
+                Lock the app automatically after it has been in the background for this long.
+              </Text>
+
+              {/* Dropdown trigger row */}
+              <TouchableOpacity
+                onPress={toggleDropdown}
+                activeOpacity={0.75}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  height: 44,
+                  borderRadius: showAutoLockDropdown ? 10 : 10,
+                  borderBottomLeftRadius:  showAutoLockDropdown ? 0 : 10,
+                  borderBottomRightRadius: showAutoLockDropdown ? 0 : 10,
+                  backgroundColor: colors.card,
+                  borderWidth: 0.6,
+                  borderColor: showAutoLockDropdown ? colors.primary : colors.border,
+                  paddingHorizontal: 14,
+                  opacity: hasPinConfigured ? 1 : 0.45,
+                }}
+              >
+                <Text style={{ flex: 1, fontSize: 14, fontWeight: "500", color: colors.text }}>
+                  {activeOption.label}
+                </Text>
+                <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
+                  <Ionicons name="chevron-down" size={16} color={colors.subText} />
+                </Animated.View>
+              </TouchableOpacity>
+
+              {/* Animated dropdown menu */}
+              <Animated.View
+                style={{
+                  height: menuHeight,
+                  overflow: "hidden",
+                  backgroundColor: colors.card,
+                  borderLeftWidth: 0.6,
+                  borderRightWidth: 0.6,
+                  borderBottomWidth: showAutoLockDropdown ? 0.6 : 0,
+                  borderColor: colors.primary,
+                  borderBottomLeftRadius: 10,
+                  borderBottomRightRadius: 10,
+                }}
+              >
+                {AUTO_LOCK_OPTIONS.map((opt, idx) => {
+                  const isActive = opt.value === autoLockTimeout;
+                  const isLast   = idx === AUTO_LOCK_OPTIONS.length - 1;
+                  return (
+                    <TouchableOpacity
+                      key={opt.label}
+                      onPress={() => selectOption(opt.value)}
+                      activeOpacity={0.65}
+                      style={{
+                        height: 44,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        paddingHorizontal: 14,
+                        borderTopWidth: 0.6,
+                        borderTopColor: colors.border,
+                        backgroundColor: isActive ? colors.primarySoft : "transparent",
+                        borderBottomLeftRadius:  isLast ? 10 : 0,
+                        borderBottomRightRadius: isLast ? 10 : 0,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          flex: 1,
+                          fontSize: 14,
+                          color: isActive ? colors.text : colors.subText,
+                          fontWeight: isActive ? "600" : "400",
+                        }}
+                      >
+                        {opt.label}
+                      </Text>
+                      {isActive && (
+                        <Ionicons name="checkmark" size={16} color={colors.text} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </Animated.View>
+
+              {!hasPinConfigured && (
+                <Text style={{ fontSize: 11, color: colors.subText, marginTop: 8 }}>
+                  Set up a PIN first to enable auto-lock.
+                </Text>
+              )}
+            </View>
+          );
+        })()}
+
+        {/* Password Health Row */}
+        <View style={{ paddingHorizontal: 24, marginBottom: 0 }}>
+          <TouchableOpacity
+            onPress={() => router.push("/health")}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: colors.background,
+              borderWidth: 0.6,
+              borderColor: colors.border,
+              height: 52,
+              borderRadius: 12,
+              paddingHorizontal: 14,
+              gap: 12,
+            }}
+          >
+            <View
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                backgroundColor: colors.successBg,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={18}
+                color={colors.success}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{ fontSize: 14, fontWeight: "600", color: colors.text }}
+              >
+                Password Health
+              </Text>
+              <Text
+                style={{ fontSize: 11, color: colors.subText, marginTop: 1 }}
+              >
+                Check for weak, reused &amp; old passwords
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.subText} />
+          </TouchableOpacity>
         </View>
 
         {/* Divider */}

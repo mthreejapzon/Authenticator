@@ -210,6 +210,12 @@ function RootContent() {
           headerShown: true,
         }}
       />
+      <Stack.Screen
+        name="health"
+        options={{
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }
