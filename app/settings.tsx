@@ -28,6 +28,8 @@ import { Storage } from "./utils/storage";
 import {
   BACKUP_GIST_ID_KEY,
   BACKUP_HISTORY_KEY,
+  CLIPBOARD_CLEAR_DELAY_DEFAULT_MS,
+  CLIPBOARD_CLEAR_DELAY_KEY,
   GITHUB_PAT_KEY as GITHUB_TOKEN_KEY,
   LAST_BACKUP_KEY,
   USER_ACCOUNT_KEYS,
@@ -54,6 +56,7 @@ export default function SettingsScreen() {
   const [gistId, setGistId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
   const [isWorking, setIsWorking] = useState(false);
+  const [lastBackup, setLastBackup] = useState<string | null>(null);
   const [history, setHistory] = useState<BackupHistoryItem[]>([]);
   const [isLoadingToken, setIsLoadingToken] = useState(true);
   const [autoRestoreEnabled, setAutoRestoreEnabled] = useState(true);
@@ -69,6 +72,11 @@ export default function SettingsScreen() {
   const { themeMode, setThemeMode, colors } = useTheme();
   const [csvWorking, setCsvWorking] = useState(false);
   const [showImportOptions, setShowImportOptions] = useState(false);
+  /**
+   * Clipboard auto-clear delay in ms.
+   * 0 = disabled. Defaults to CLIPBOARD_CLEAR_DELAY_DEFAULT_MS on first run.
+   */
+  const [clipboardClearDelay, setClipboardClearDelay] = useState<number>(CLIPBOARD_CLEAR_DELAY_DEFAULT_MS);
 
   // Hide default header and use custom header
   useLayoutEffect(() => {
@@ -97,6 +105,31 @@ export default function SettingsScreen() {
       }
     })();
   }, []);
+
+  // Load clipboard auto-clear delay
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await Storage.getItemAsync(CLIPBOARD_CLEAR_DELAY_KEY);
+        if (raw !== null) {
+          const parsed = parseInt(raw, 10);
+          setClipboardClearDelay(isNaN(parsed) ? CLIPBOARD_CLEAR_DELAY_DEFAULT_MS : parsed);
+        }
+      } catch (err) {
+        console.error("Failed to load clipboard clear delay:", err);
+      }
+    })();
+  }, []);
+
+  /** Persist the user's chosen clipboard auto-clear delay. */
+  const handleClipboardClearDelayChange = async (delayMs: number) => {
+    setClipboardClearDelay(delayMs);
+    try {
+      await Storage.setItemAsync(CLIPBOARD_CLEAR_DELAY_KEY, String(delayMs));
+    } catch (err) {
+      console.error("Failed to save clipboard clear delay:", err);
+    }
+  };
 
   // Load auto-restore setting
   useEffect(() => {
@@ -185,7 +218,7 @@ export default function SettingsScreen() {
           setGistId(g);
           setGistIdInput(g);
         }
-        if (last) { /* last backup timestamp loaded — reserved for future display */ }
+        if (last) setLastBackup(last);
         if (hist) {
           try {
             setHistory(JSON.parse(hist));
@@ -1719,6 +1752,59 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               </>
             )}
+          </View>
+        </View>
+
+        {/* Divider (security → clipboard) */}
+        <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 16 }} />
+
+        {/* Clipboard Auto-Clear */}
+        <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 8 }}>
+            <Ionicons name="clipboard-outline" size={16} color={colors.text} />
+            <Text style={{ fontSize: 14, fontWeight: "500", color: colors.text }}>
+              Clear clipboard after copy
+            </Text>
+          </View>
+          <Text style={{ fontSize: 12, color: colors.subText, marginBottom: 12, lineHeight: 17 }}>
+            Automatically overwrites the clipboard after you copy a password or OTP code.
+          </Text>
+          {/* Segmented delay picker */}
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {([
+              { label: "Off", value: 0 },
+              { label: "30s", value: 30_000 },
+              { label: "60s", value: 60_000 },
+              { label: "2 min", value: 120_000 },
+            ] as { label: string; value: number }[]).map(({ label, value }) => {
+              const active = clipboardClearDelay === value;
+              return (
+                <TouchableOpacity
+                  key={label}
+                  onPress={() => handleClipboardClearDelayChange(value)}
+                  style={{
+                    flex: 1,
+                    height: 36,
+                    borderRadius: 8,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: active ? colors.primary : colors.background,
+                    borderWidth: 0.6,
+                    borderColor: active ? colors.primary : colors.border,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "600",
+                      color: active ? colors.background : colors.subText,
+                    }}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
 

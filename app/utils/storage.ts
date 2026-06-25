@@ -5,6 +5,10 @@
 
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import {
+  CLIPBOARD_CLEAR_DELAY_DEFAULT_MS,
+  CLIPBOARD_CLEAR_DELAY_KEY,
+} from './constants';
 
 // Type definitions for Electron API
 interface ElectronAPI {
@@ -99,12 +103,55 @@ export const Storage = {
   },
 };
 
+// ── Clipboard auto-clear ─────────────────────────────────────────────────────
+// We keep a single module-level timer handle so that rapid copies always
+// reset the countdown instead of stacking multiple timers.
+let _autoClearTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Read the user's configured clipboard auto-clear delay from storage.
+ * Returns 0 if the feature is disabled.
+ */
+async function getClipboardClearDelayMs(): Promise<number> {
+  try {
+    const raw = await Storage.getItemAsync(CLIPBOARD_CLEAR_DELAY_KEY);
+    if (raw === null) return CLIPBOARD_CLEAR_DELAY_DEFAULT_MS; // first-run default
+    const parsed = parseInt(raw, 10);
+    return isNaN(parsed) ? CLIPBOARD_CLEAR_DELAY_DEFAULT_MS : parsed;
+  } catch {
+    return CLIPBOARD_CLEAR_DELAY_DEFAULT_MS;
+  }
+}
+
+/**
+ * Overwrite the clipboard with an empty string using the platform-appropriate API.
+ */
+async function clearClipboardContents(): Promise<void> {
+  try {
+    if (isElectron() && window.electronAPI) {
+      await window.electronAPI.clipboard.setStringAsync('');
+    } else if (Platform.OS === 'web') {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText('');
+      }
+    } else {
+      const ExpoClipboard = require('expo-clipboard');
+      await ExpoClipboard.setStringAsync('');
+    }
+    console.log('🗑️ Clipboard auto-cleared');
+  } catch (err) {
+    console.warn('Clipboard auto-clear failed:', err);
+  }
+}
+
 /**
  * Unified Clipboard API
  */
 export const Clipboard = {
   /**
-   * Set string to clipboard
+   * Set string to clipboard.
+   * Automatically schedules a clear after the user-configured delay
+   * (default 30 s). If the delay is set to 0 the auto-clear is skipped.
    */
   async setStringAsync(text: string): Promise<void> {
     try {
@@ -140,6 +187,21 @@ export const Clipboard = {
       console.error('Clipboard.setStringAsync error:', error);
       throw error;
     }
+
+    // ── Auto-clear ──────────────────────────────────────────────────────────
+    // Fire-and-forget: read the setting then arm (or re-arm) the timer.
+    getClipboardClearDelayMs().then((delayMs) => {
+      if (delayMs <= 0) return; // feature disabled
+
+      if (_autoClearTimer !== null) {
+        clearTimeout(_autoClearTimer);
+      }
+
+      _autoClearTimer = setTimeout(() => {
+        _autoClearTimer = null;
+        clearClipboardContents();
+      }, delayMs);
+    });
   },
 
   /**

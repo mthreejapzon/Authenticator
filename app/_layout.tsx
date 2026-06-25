@@ -2,7 +2,6 @@ import { Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, AppState, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import AppLockGate from "./components/AppLockGate";
 import PinUnlockScreen from "./components/PinUnlockScreen";
 import { FormProvider } from "./context/FormContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
@@ -13,72 +12,59 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
-        <AppLockGate>
-          <FormProvider>
-            <RootContent />
-          </FormProvider>
-        </AppLockGate>
+        <FormProvider>
+          <RootContent />
+        </FormProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );
 }
 
+/**
+ * RootContent — single source of truth for app-lock state.
+ *
+ * Responsibilities:
+ *  1. On mount: check if a PIN exists and if the app is currently locked.
+ *  2. On AppState change: lock when going to background, re-check on foreground.
+ *  3. Initialise auto-sync / auto-restore polling after unlock.
+ *
+ * Previously this logic was split between AppLockGate (which incorrectly
+ * assumed "PIN exists → must be locked") and RootContent (which checked
+ * isAppLocked() properly). Merging them into a single component removes
+ * the double-lock-screen race condition on startup.
+ */
 function RootContent() {
-  const [isCheckingPin, setIsCheckingPin] = useState(true);
-  const [isLocked, setIsLocked] = useState(false);
   const { colors } = useTheme();
 
-  // Check PIN status on mount
+  // Three-state lock: "checking" prevents any screen flash before we know
+  type LockState = "checking" | "locked" | "unlocked";
+  const [lockState, setLockState] = useState<LockState>("checking");
+
+  /* ── Mount: check current lock state ─────────────────────────────────── */
   useEffect(() => {
     checkPinStatus();
   }, []);
 
-  // Lock app when it goes to background
+  /* ── AppState: lock on background, re-check on foreground ────────────── */
   useEffect(() => {
     const subscription = AppState.addEventListener(
       "change",
       async (nextAppState) => {
         if (nextAppState === "background" || nextAppState === "inactive") {
-          // Lock app when going to background
           const pinExists = await hasPin();
           if (pinExists) {
             await lockApp();
           }
         } else if (nextAppState === "active") {
-          // Check lock status when coming back to foreground
           await checkPinStatus();
         }
       },
     );
 
-    return () => {
-      subscription.remove();
-    };
+    return () => subscription.remove();
   }, []);
 
-  const checkPinStatus = async () => {
-    try {
-      const pinExists = await hasPin();
-
-      if (pinExists) {
-        const locked = await isAppLocked();
-        setIsLocked(locked);
-      } else {
-        setIsLocked(false);
-      }
-    } catch (err) {
-      console.error("Failed to check PIN status:", err);
-      setIsLocked(false);
-    } finally {
-      setIsCheckingPin(false);
-    }
-  };
-
-  const handleUnlock = () => {
-    setIsLocked(false);
-  };
-
-  // Initialize auto-sync
+  /* ── Auto-sync initialisation (runs once after component mounts) ─────── */
   useEffect(() => {
     (async () => {
       try {
@@ -92,27 +78,21 @@ function RootContent() {
 
         const token = await Storage.getItemAsync(GITHUB_PAT_KEY);
         if (token) {
-          // Enable auto-sync by default if not set
           const syncEnabled = await isAutoSyncEnabled();
           if (syncEnabled === null || syncEnabled === undefined) {
             await setAutoSyncEnabled(true);
           }
 
-          // Start polling if auto-restore is enabled
           const restoreEnabled = await isAutoRestoreEnabled();
           if (restoreEnabled) {
             await startAutoRestorePolling();
-            console.log("✅ Auto-sync and polling initialized");
-          } else {
-            console.log("✅ Auto-sync initialized (auto-restore disabled)");
           }
         }
       } catch (err) {
-        console.error("❌ Initialization failed:", err);
+        console.error("Initialisation failed:", err);
       }
     })();
 
-    // Cleanup on unmount
     return () => {
       (async () => {
         const { stopAutoRestorePolling } = await import("./utils/backupUtils");
@@ -121,8 +101,27 @@ function RootContent() {
     };
   }, []);
 
-  // Show loading while checking PIN
-  if (isCheckingPin) {
+  /* ── Helpers ─────────────────────────────────────────────────────────── */
+
+  const checkPinStatus = async () => {
+    try {
+      const pinExists = await hasPin();
+      if (pinExists) {
+        const locked = await isAppLocked();
+        setLockState(locked ? "locked" : "unlocked");
+      } else {
+        setLockState("unlocked");
+      }
+    } catch (err) {
+      console.error("Failed to check PIN status:", err);
+      // Fail open — don't block the user if the check errors
+      setLockState("unlocked");
+    }
+  };
+
+  /* ── Render ──────────────────────────────────────────────────────────── */
+
+  if (lockState === "checking") {
     return (
       <View
         style={{
@@ -132,14 +131,15 @@ function RootContent() {
           backgroundColor: colors.background,
         }}
       >
-        <ActivityIndicator size="large" color={colors.text} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
-  // Show PIN unlock screen if locked
-  if (isLocked) {
-    return <PinUnlockScreen onUnlock={handleUnlock} />;
+  if (lockState === "locked") {
+    return (
+      <PinUnlockScreen onUnlock={() => setLockState("unlocked")} />
+    );
   }
 
   return (

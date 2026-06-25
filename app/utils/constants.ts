@@ -32,6 +32,15 @@ export const PIN_LENGTH = 6;
 export const THEME_KEY = "app_theme_mode";
 export const BIOMETRICS_ENABLED_KEY = "use_biometrics";
 
+/**
+ * Storage key for the clipboard auto-clear delay setting.
+ * Value is stored as a string number (milliseconds), or "0" to disable.
+ */
+export const CLIPBOARD_CLEAR_DELAY_KEY = "clipboard_clear_delay_ms";
+
+/** Default clipboard auto-clear delay: 30 seconds. */
+export const CLIPBOARD_CLEAR_DELAY_DEFAULT_MS = 30_000;
+
 // ── Timing ───────────────────────────────────────────────────────────────────
 /** Delay (ms) between a successful PIN verification and the onVerified callback. */
 export const VERIFICATION_SUCCESS_DELAY_MS = 300;

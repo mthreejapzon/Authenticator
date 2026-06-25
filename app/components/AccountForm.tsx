@@ -70,6 +70,7 @@ export default function AccountForm({
   const [isSaving, setIsSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
   const [hasToken, setHasToken] = useState(false);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(!!secretKey?.trim());
   const [showGenerator, setShowGenerator] = useState(false);
