@@ -5,9 +5,10 @@
  * No React, no UI — just data-in → report-out.
  *
  * Checks performed:
- *  1. Weak passwords  — scored with the same rubric as PasswordStrengthIndicator
+ *  1. Weak passwords   — scored with the same rubric as PasswordStrengthIndicator
  *  2. Reused passwords — exact-match comparison across decrypted passwords
- *  3. Old passwords   — modified/created more than OLD_PASSWORD_DAYS_THRESHOLD days ago
+ *  3. Old passwords    — modified/created more than OLD_PASSWORD_DAYS_THRESHOLD days ago
+ *  4. Breached         — found in Have I Been Pwned database (k-anonymity)
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,20 +35,25 @@ export interface HealthIssue {
   strengthLevel?: StrengthLevel;
   /** Days since the password was last changed (undefined if no timestamp) */
   daysSinceChange?: number;
+  /** Number of times this password appeared in known breach datasets */
+  breachCount?: number;
 }
 
-export type IssueType = "weak" | "reused" | "old";
+export type IssueType = "weak" | "reused" | "old" | "breached";
 
 export interface HealthReport {
   totalAccounts: number;
   weakCount: number;
   reusedCount: number;
   oldCount: number;
+  breachedCount: number;
   /** Overall health score 0-100 */
   score: number;
   issues: HealthIssue[];
   /** True if the scan ran without a PAT (passwords couldn't be decrypted) */
   partialScan: boolean;
+  /** True if the breach check was skipped (no internet / partial scan) */
+  breachCheckSkipped: boolean;
 }
 
 export interface AccountSnapshot {
@@ -107,13 +113,17 @@ export function daysSinceDate(isoString: string | undefined): number | undefined
 /**
  * Analyse a list of account snapshots and return a full health report.
  *
- * @param accounts  Pre-fetched + pre-decrypted account data
- * @param partialScan  True when PAT was unavailable and passwords are empty
+ * @param accounts       Pre-fetched + pre-decrypted account data
+ * @param partialScan    True when PAT was unavailable and passwords are empty
+ * @param breachResults  Optional map of account key → breach result from HIBP
  */
 export function analyseHealth(
   accounts: AccountSnapshot[],
   partialScan: boolean,
+  breachResults?: Map<string, { breached: boolean; count: number }>,
 ): HealthReport {
+  const breachCheckSkipped = !breachResults;
+
   // ── 1. Build a map of password → keys that share it (for reuse detection) ──
   const passwordMap = new Map<string, string[]>(); // password → [key, ...]
   for (const acc of accounts) {
@@ -165,24 +175,35 @@ export function analyseHealth(
       entry.issues.push("old");
       entry.daysSinceChange = days;
     }
+
+    // Breached — from HIBP results map
+    if (breachResults) {
+      const breach = breachResults.get(acc.key);
+      if (breach?.breached) {
+        entry.issues.push("breached");
+        entry.breachCount = breach.count;
+      }
+    }
   }
 
   const issues = [...issueMap.values()].filter((e) => e.issues.length > 0);
 
   // ── 3. Counts ─────────────────────────────────────────────────────────────
-  const weakCount   = issues.filter((e) => e.issues.includes("weak")).length;
-  const reusedCount = issues.filter((e) => e.issues.includes("reused")).length;
-  const oldCount    = issues.filter((e) => e.issues.includes("old")).length;
-  const total       = accounts.length;
+  const weakCount     = issues.filter((e) => e.issues.includes("weak")).length;
+  const reusedCount   = issues.filter((e) => e.issues.includes("reused")).length;
+  const oldCount      = issues.filter((e) => e.issues.includes("old")).length;
+  const breachedCount = issues.filter((e) => e.issues.includes("breached")).length;
+  const total         = accounts.length;
 
   // ── 4. Score (0-100) ──────────────────────────────────────────────────────
-  // Each category can deduct up to ~33 points proportional to the ratio
-  // of affected accounts. Partial scans cap at 50 since we can't fully assess.
+  // Breached accounts are the most severe — deduct up to 30 extra points.
+  // Partial scans cap at 50 since we can't fully assess.
   let score = 100;
   if (total > 0) {
-    score -= Math.round((weakCount   / total) * 40);
-    score -= Math.round((reusedCount / total) * 35);
-    score -= Math.round((oldCount    / total) * 25);
+    score -= Math.round((weakCount     / total) * 30);
+    score -= Math.round((reusedCount   / total) * 25);
+    score -= Math.round((oldCount      / total) * 15);
+    score -= Math.round((breachedCount / total) * 30);
   }
   if (partialScan) score = Math.min(score, 50);
   score = Math.max(0, Math.min(100, score));
@@ -192,8 +213,10 @@ export function analyseHealth(
     weakCount,
     reusedCount,
     oldCount,
+    breachedCount,
     score,
     issues,
     partialScan,
+    breachCheckSkipped,
   };
 }

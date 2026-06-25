@@ -3,7 +3,10 @@
  *
  * Reachable from Settings → "Password Health" row.
  * Scans all stored accounts, decrypts passwords (requires GitHub PAT),
- * and presents a scored report of weak, reused, and old passwords.
+ * and presents a scored report of weak, reused, old, and breached passwords.
+ *
+ * Breach check uses the HIBP k-Anonymity API — your passwords are never
+ * sent over the network (only the first 5 chars of their SHA-1 hash).
  */
 
 import { Ionicons } from "@expo/vector-icons";
@@ -12,7 +15,6 @@ import { useEffect, useLayoutEffect, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -29,17 +31,17 @@ import {
   type HealthIssue,
   type HealthReport,
   analyseHealth,
-  scorePassword,
 } from "./utils/passwordHealth";
+import { checkPasswordBreachesBatch } from "./utils/breachCheck";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 function scoreColor(score: number): string {
-  if (score >= 80) return "#16a34a"; // green
-  if (score >= 55) return "#d97706"; // amber
-  return "#e7000b";                  // red
+  if (score >= 80) return "#16a34a";
+  if (score >= 55) return "#d97706";
+  return "#e7000b";
 }
 
 function scoreLabel(score: number): string {
@@ -54,45 +56,23 @@ function formatDays(days: number): string {
   return `${(days / 365).toFixed(1)}yr ago`;
 }
 
+function formatBreachCount(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M leaks`;
+  if (count >= 1_000)     return `${(count / 1_000).toFixed(0)}K leaks`;
+  return `${count} leaks`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ScoreRing({
-  score,
-  size = 120,
-}: {
-  score: number;
-  size?: number;
-}) {
+function ScoreRing({ score, size = 120 }: { score: number; size?: number }) {
   const color = scoreColor(score);
   const label = scoreLabel(score);
   return (
     <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
-      {/* Outer ring */}
-      <View
-        style={{
-          position: "absolute",
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          borderWidth: 8,
-          borderColor: "#e5e7eb",
-        }}
-      />
-      {/* Filled arc approximation — solid ring in score color */}
-      <View
-        style={{
-          position: "absolute",
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          borderWidth: 8,
-          borderColor: color,
-          opacity: 0.25,
-        }}
-      />
-      {/* Center text */}
+      <View style={{ position: "absolute", width: size, height: size, borderRadius: size / 2, borderWidth: 8, borderColor: "#e5e7eb" }} />
+      <View style={{ position: "absolute", width: size, height: size, borderRadius: size / 2, borderWidth: 8, borderColor: color, opacity: 0.25 }} />
       <Text style={{ fontSize: 32, fontWeight: "800", color }}>{score}</Text>
       <Text style={{ fontSize: 12, fontWeight: "700", color, marginTop: -2 }}>{label}</Text>
     </View>
@@ -100,11 +80,7 @@ function ScoreRing({
 }
 
 function StatCard({
-  icon,
-  count,
-  label,
-  color,
-  bg,
+  icon, count, label, color, bg,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   count: number;
@@ -113,39 +89,26 @@ function StatCard({
   bg: string;
 }) {
   return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: bg,
-        borderRadius: 14,
-        paddingVertical: 14,
-        paddingHorizontal: 10,
-        alignItems: "center",
-        gap: 4,
-      }}
-    >
+    <View style={{ flex: 1, backgroundColor: bg, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 10, alignItems: "center", gap: 4 }}>
       <Ionicons name={icon} size={20} color={color} />
       <Text style={{ fontSize: 22, fontWeight: "800", color }}>{count}</Text>
-      <Text style={{ fontSize: 11, fontWeight: "600", color, textAlign: "center" }}>
-        {label}
-      </Text>
+      <Text style={{ fontSize: 11, fontWeight: "600", color, textAlign: "center" }}>{label}</Text>
     </View>
   );
 }
 
 function IssueRow({
-  issue,
-  colors,
-  onPress,
+  issue, colors, onPress,
 }: {
   issue: HealthIssue;
   colors: ReturnType<typeof useTheme>["colors"];
   onPress: () => void;
 }) {
   const pills: { label: string; bg: string; text: string }[] = [];
-  if (issue.issues.includes("weak"))   pills.push({ label: "Weak",   bg: colors.dangerBg,  text: colors.danger });
-  if (issue.issues.includes("reused")) pills.push({ label: "Reused", bg: colors.warningBg, text: colors.warning });
-  if (issue.issues.includes("old"))    pills.push({ label: "Old",    bg: colors.infoBg,    text: colors.otpPrimary });
+  if (issue.issues.includes("breached")) pills.push({ label: "Breached ☠️", bg: colors.dangerBg,  text: colors.danger });
+  if (issue.issues.includes("weak"))     pills.push({ label: "Weak",        bg: colors.dangerBg,  text: colors.danger });
+  if (issue.issues.includes("reused"))   pills.push({ label: "Reused",      bg: colors.warningBg, text: colors.warning });
+  if (issue.issues.includes("old"))      pills.push({ label: "Old",         bg: colors.infoBg,    text: colors.otpPrimary });
 
   return (
     <TouchableOpacity
@@ -160,19 +123,12 @@ function IssueRow({
         borderRadius: 12,
         marginBottom: 8,
         gap: 12,
+        borderLeftWidth: issue.issues.includes("breached") ? 3 : 0,
+        borderLeftColor: colors.danger,
       }}
     >
-      {/* Provider initial bubble */}
-      <View
-        style={{
-          width: 38,
-          height: 38,
-          borderRadius: 10,
-          backgroundColor: colors.primarySoft,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
+      {/* Initial bubble */}
+      <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center" }}>
         <Text style={{ fontSize: 15, fontWeight: "700", color: colors.text }}>
           {(issue.accountName || "?")[0].toUpperCase()}
         </Text>
@@ -180,10 +136,7 @@ function IssueRow({
 
       {/* Name + pills */}
       <View style={{ flex: 1, gap: 5 }}>
-        <Text
-          style={{ fontSize: 15, fontWeight: "600", color: colors.text }}
-          numberOfLines={1}
-        >
+        <Text style={{ fontSize: 15, fontWeight: "600", color: colors.text }} numberOfLines={1}>
           {issue.accountName}
         </Text>
         {issue.username ? (
@@ -191,22 +144,17 @@ function IssueRow({
             {issue.username}
           </Text>
         ) : null}
-        <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+        <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           {pills.map((p) => (
-            <View
-              key={p.label}
-              style={{
-                paddingHorizontal: 8,
-                paddingVertical: 2,
-                borderRadius: 20,
-                backgroundColor: p.bg,
-              }}
-            >
-              <Text style={{ fontSize: 10, fontWeight: "700", color: p.text }}>
-                {p.label}
-              </Text>
+            <View key={p.label} style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20, backgroundColor: p.bg }}>
+              <Text style={{ fontSize: 10, fontWeight: "700", color: p.text }}>{p.label}</Text>
             </View>
           ))}
+          {issue.breachCount !== undefined && issue.issues.includes("breached") && (
+            <Text style={{ fontSize: 11, color: colors.danger, fontWeight: "600" }}>
+              {formatBreachCount(issue.breachCount)}
+            </Text>
+          )}
           {issue.daysSinceChange !== undefined && issue.issues.includes("old") && (
             <Text style={{ fontSize: 11, color: colors.subText, alignSelf: "center" }}>
               {formatDays(issue.daysSinceChange)}
@@ -224,121 +172,121 @@ function IssueRow({
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
+type ScanPhase = "decrypting" | "checking-breaches" | "done";
+
 export default function HealthScreen() {
   const router     = useRouter();
   const navigation = useNavigation();
   const insets     = useSafeAreaInsets();
   const { colors } = useTheme();
 
-  const [status, setStatus]   = useState<"loading" | "done" | "error">("loading");
-  const [report, setReport]   = useState<HealthReport | null>(null);
+  const [status, setStatus]     = useState<"loading" | "done" | "error">("loading");
+  const [phase, setPhase]       = useState<ScanPhase>("decrypting");
+  const [progress, setProgress] = useState(0); // 0–100 for breach check progress
+  const [report, setReport]     = useState<HealthReport | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
-  const [fadeAnim]            = useState(new Animated.Value(0));
+  const [fadeAnim]              = useState(new Animated.Value(0));
 
-  // ── Hide native header ────────────────────────────────────────────────────
-  useLayoutEffect(() => {
-    navigation.setOptions({ headerShown: false });
-  }, [navigation]);
-
-  // ── Run scan on mount ─────────────────────────────────────────────────────
-  useEffect(() => {
-    runScan();
-  }, []);
+  useLayoutEffect(() => { navigation.setOptions({ headerShown: false }); }, [navigation]);
+  useEffect(() => { runScan(); }, []);
 
   const runScan = async () => {
     setStatus("loading");
+    setPhase("decrypting");
+    setProgress(0);
     setReport(null);
     setErrorMsg("");
+    fadeAnim.setValue(0);
 
     try {
       // 1. Load all account keys
-      const raw = await Storage.getItemAsync(USER_ACCOUNT_KEYS);
+      const raw  = await Storage.getItemAsync(USER_ACCOUNT_KEYS);
       const keys: string[] = raw ? JSON.parse(raw) : [];
 
-      // 2. Fetch PAT for decryption (optional — we do a partial scan if absent)
-      const pat        = await Storage.getItemAsync(GITHUB_PAT_KEY);
+      // 2. Fetch PAT
+      const pat         = await Storage.getItemAsync(GITHUB_PAT_KEY);
       const partialScan = !pat || pat.trim().length === 0;
 
-      // 3. Load + decrypt each account
-      const snapshots: AccountSnapshot[] = await Promise.all(
-        keys.map(async (key): Promise<AccountSnapshot | null> => {
-          try {
-            const stored = await Storage.getItemAsync(key);
-            if (!stored) return null;
-            const parsed = JSON.parse(stored);
+      // 3. Load + decrypt accounts
+      const snapshots: AccountSnapshot[] = (
+        await Promise.all(
+          keys.map(async (key): Promise<AccountSnapshot | null> => {
+            try {
+              const stored = await Storage.getItemAsync(key);
+              if (!stored) return null;
+              const parsed      = JSON.parse(stored);
+              const isEncrypted = parsed.encrypted !== false;
+              let decryptedPw   = "";
 
-            const isEncrypted = parsed.encrypted !== false;
-            let decryptedPw = "";
-
-            if (!partialScan && isEncrypted && parsed.password) {
-              try {
-                decryptedPw = await decryptText(parsed.password, pat!);
-              } catch {
-                // Decryption failed for this entry — treat as no password
-                decryptedPw = "";
+              if (!partialScan && isEncrypted && parsed.password) {
+                try { decryptedPw = await decryptText(parsed.password, pat!); } catch { /* skip */ }
+              } else if (!isEncrypted) {
+                decryptedPw = parsed.password || "";
               }
-            } else if (!isEncrypted) {
-              decryptedPw = parsed.password || "";
-            }
 
-            return {
-              key,
-              accountName: parsed.accountName || "(unnamed)",
-              username:    parsed.username    || "",
-              password:    decryptedPw,
-              modifiedAt:  parsed.modifiedAt,
-              createdAt:   parsed.createdAt,
-              encrypted:   isEncrypted,
-            };
-          } catch {
-            return null;
+              return {
+                key,
+                accountName: parsed.accountName || "(unnamed)",
+                username:    parsed.username    || "",
+                password:    decryptedPw,
+                modifiedAt:  parsed.modifiedAt,
+                createdAt:   parsed.createdAt,
+                encrypted:   isEncrypted,
+              };
+            } catch { return null; }
+          }),
+        )
+      ).filter(Boolean) as AccountSnapshot[];
+
+      // 4. Breach check (skip if partial scan — no passwords to check)
+      setPhase("checking-breaches");
+
+      let breachResults: Map<string, { breached: boolean; count: number }> | undefined;
+
+      if (!partialScan) {
+        const passwordsToCheck = snapshots
+          .filter((s) => s.password.length > 0)
+          .map((s) => ({ key: s.key, password: s.password }));
+
+        if (passwordsToCheck.length > 0) {
+          // Run in batches of 5 and track progress
+          const batchSize  = 5;
+          const allResults = new Map<string, { breached: boolean; count: number }>();
+
+          for (let i = 0; i < passwordsToCheck.length; i += batchSize) {
+            const batch       = passwordsToCheck.slice(i, i + batchSize);
+            const batchResult = await checkPasswordBreachesBatch(batch, batchSize);
+            batchResult.forEach((v, k) => allResults.set(k, v));
+            setProgress(Math.round(((i + batch.length) / passwordsToCheck.length) * 100));
           }
-        }),
-      ).then((r) => r.filter(Boolean) as AccountSnapshot[]);
 
-      // 4. Analyse
-      const result = analyseHealth(snapshots, partialScan);
+          breachResults = allResults;
+        }
+      }
+
+      // 5. Analyse
+      const result = analyseHealth(snapshots, partialScan, breachResults);
       setReport(result);
       setStatus("done");
-
-      // Fade in results
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }).start();
+      Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Unknown error");
       setStatus("error");
     }
   };
 
-  // ── Render helpers ────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
   const s = StyleSheet.create({
-    screen:    { flex: 1, backgroundColor: colors.background },
-    header:    {
-      paddingTop: insets.top + 8,
-      paddingBottom: 12,
-      paddingHorizontal: 20,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
-    },
-    title:     { fontSize: 20, fontWeight: "700", color: colors.text, flex: 1 },
-    section:   { fontSize: 13, fontWeight: "700", color: colors.subText,
-                 textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 },
-    card:      {
-      backgroundColor: colors.card,
-      borderRadius: 16,
-      padding: 20,
-      marginBottom: 16,
-    },
+    screen:  { flex: 1, backgroundColor: colors.background },
+    header:  { paddingTop: insets.top + 8, paddingBottom: 12, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", gap: 12 },
+    title:   { fontSize: 20, fontWeight: "700", color: colors.text, flex: 1 },
+    section: { fontSize: 13, fontWeight: "700", color: colors.subText, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 },
+    card:    { backgroundColor: colors.card, borderRadius: 16, padding: 20, marginBottom: 16 },
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
   return (
     <View style={s.screen}>
-      {/* ── Custom header ── */}
+      {/* Header */}
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
@@ -351,42 +299,48 @@ export default function HealthScreen() {
         )}
       </View>
 
-      {/* ── Loading ── */}
+      {/* Loading */}
       {status === "loading" && (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 16 }}>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 20, paddingHorizontal: 32 }}>
           <ActivityIndicator size="large" color={colors.text} />
-          <Text style={{ color: colors.subText, fontSize: 14 }}>
-            Analysing your vault…
-          </Text>
+
+          {phase === "decrypting" && (
+            <Text style={{ color: colors.subText, fontSize: 14, textAlign: "center" }}>
+              Decrypting your vault…
+            </Text>
+          )}
+
+          {phase === "checking-breaches" && (
+            <View style={{ width: "100%", gap: 10, alignItems: "center" }}>
+              <Text style={{ color: colors.subText, fontSize: 14, textAlign: "center" }}>
+                Checking Have I Been Pwned…
+              </Text>
+              <Text style={{ color: colors.mutedText, fontSize: 12, textAlign: "center" }}>
+                Your passwords are never sent — only a partial hash is used
+              </Text>
+              {/* Progress bar */}
+              <View style={{ width: "100%", height: 6, backgroundColor: colors.border, borderRadius: 3, overflow: "hidden" }}>
+                <View style={{ height: "100%", width: `${progress}%`, backgroundColor: colors.otpPrimary, borderRadius: 3 }} />
+              </View>
+              <Text style={{ color: colors.mutedText, fontSize: 12 }}>{progress}%</Text>
+            </View>
+          )}
         </View>
       )}
 
-      {/* ── Error ── */}
+      {/* Error */}
       {status === "error" && (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 12 }}>
           <Ionicons name="warning-outline" size={48} color={colors.danger} />
-          <Text style={{ color: colors.text, fontSize: 16, fontWeight: "600", textAlign: "center" }}>
-            Scan failed
-          </Text>
-          <Text style={{ color: colors.subText, fontSize: 13, textAlign: "center" }}>
-            {errorMsg}
-          </Text>
-          <TouchableOpacity
-            onPress={runScan}
-            style={{
-              marginTop: 8,
-              paddingHorizontal: 24,
-              paddingVertical: 12,
-              backgroundColor: colors.primary,
-              borderRadius: 10,
-            }}
-          >
+          <Text style={{ color: colors.text, fontSize: 16, fontWeight: "600", textAlign: "center" }}>Scan failed</Text>
+          <Text style={{ color: colors.subText, fontSize: 13, textAlign: "center" }}>{errorMsg}</Text>
+          <TouchableOpacity onPress={runScan} style={{ marginTop: 8, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.primary, borderRadius: 10 }}>
             <Text style={{ color: colors.background, fontWeight: "600" }}>Try Again</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* ── Results ── */}
+      {/* Results */}
       {status === "done" && report && (
         <Animated.ScrollView
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 32 }}
@@ -395,21 +349,21 @@ export default function HealthScreen() {
         >
           {/* Partial-scan notice */}
           {report.partialScan && (
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "flex-start",
-                gap: 10,
-                backgroundColor: colors.warningBg,
-                borderRadius: 12,
-                padding: 14,
-                marginBottom: 16,
-              }}
-            >
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: colors.warningBg, borderRadius: 12, padding: 14, marginBottom: 16 }}>
               <Ionicons name="information-circle-outline" size={18} color={colors.warning} style={{ marginTop: 1 }} />
               <Text style={{ flex: 1, fontSize: 13, color: colors.warning, lineHeight: 18 }}>
-                No GitHub token configured — password strength and reuse checks are unavailable.
+                No GitHub token configured — password strength, reuse, and breach checks are unavailable.
                 Add your token in Settings to get a full report.
+              </Text>
+            </View>
+          )}
+
+          {/* Breach check skipped notice (has token but offline, etc.) */}
+          {!report.partialScan && report.breachCheckSkipped && (
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: colors.infoBg, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+              <Ionicons name="cloud-offline-outline" size={18} color={colors.otpPrimary} style={{ marginTop: 1 }} />
+              <Text style={{ flex: 1, fontSize: 13, color: colors.otpPrimary, lineHeight: 18 }}>
+                Breach check was skipped (no passwords to check). Add accounts with passwords to enable it.
               </Text>
             </View>
           )}
@@ -418,69 +372,43 @@ export default function HealthScreen() {
           <View style={[s.card, { alignItems: "center", gap: 16 }]}>
             <ScoreRing score={report.score} />
             <View style={{ alignItems: "center", gap: 4 }}>
-              <Text style={{ fontSize: 15, fontWeight: "600", color: colors.text }}>
-                Vault Health Score
-              </Text>
+              <Text style={{ fontSize: 15, fontWeight: "600", color: colors.text }}>Vault Health Score</Text>
               <Text style={{ fontSize: 13, color: colors.subText, textAlign: "center" }}>
                 Based on {report.totalAccounts} account{report.totalAccounts !== 1 ? "s" : ""}
               </Text>
             </View>
-
-            {/* Progress bar */}
             <View style={{ width: "100%", height: 8, backgroundColor: colors.border, borderRadius: 4, overflow: "hidden" }}>
-              <View
-                style={{
-                  height: "100%",
-                  width: `${report.score}%`,
-                  backgroundColor: scoreColor(report.score),
-                  borderRadius: 4,
-                }}
-              />
+              <View style={{ height: "100%", width: `${report.score}%`, backgroundColor: scoreColor(report.score), borderRadius: 4 }} />
             </View>
           </View>
 
-          {/* Stat row */}
-          <View style={{ flexDirection: "row", gap: 10, marginBottom: 24 }}>
-            <StatCard
-              icon="shield-outline"
-              count={report.weakCount}
-              label="Weak"
-              color={colors.danger}
-              bg={colors.dangerBg}
-            />
-            <StatCard
-              icon="copy-outline"
-              count={report.reusedCount}
-              label="Reused"
-              color={colors.warning}
-              bg={colors.warningBg}
-            />
-            <StatCard
-              icon="time-outline"
-              count={report.oldCount}
-              label={`${OLD_PASSWORD_DAYS_THRESHOLD}d+ Old`}
-              color={colors.otpPrimary}
-              bg={colors.infoBg}
-            />
+          {/* Stat cards — 2×2 grid */}
+          <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
+            <StatCard icon="shield-outline"  count={report.weakCount}     label="Weak"     color={colors.danger}     bg={colors.dangerBg}  />
+            <StatCard icon="copy-outline"    count={report.reusedCount}   label="Reused"   color={colors.warning}    bg={colors.warningBg} />
           </View>
+          <View style={{ flexDirection: "row", gap: 10, marginBottom: 24 }}>
+            <StatCard icon="time-outline"    count={report.oldCount}      label={`${OLD_PASSWORD_DAYS_THRESHOLD}d+ Old`} color={colors.otpPrimary} bg={colors.infoBg} />
+            <StatCard icon="skull-outline"   count={report.breachedCount} label="Breached" color={colors.danger}     bg={colors.dangerBg}  />
+          </View>
+
+          {/* HIBP badge */}
+          {!report.breachCheckSkipped && !report.partialScan && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 20, backgroundColor: colors.successBg, borderRadius: 10, padding: 10 }}>
+              <Ionicons name="shield-checkmark-outline" size={16} color={colors.success} />
+              <Text style={{ flex: 1, fontSize: 12, color: colors.success }}>
+                Breach check powered by Have I Been Pwned — your passwords were never sent over the network.
+              </Text>
+            </View>
+          )}
 
           {/* All-good state */}
           {report.issues.length === 0 && !report.partialScan && (
-            <View
-              style={{
-                alignItems: "center",
-                gap: 12,
-                paddingVertical: 40,
-                backgroundColor: colors.successBg,
-                borderRadius: 16,
-              }}
-            >
+            <View style={{ alignItems: "center", gap: 12, paddingVertical: 40, backgroundColor: colors.successBg, borderRadius: 16 }}>
               <Ionicons name="checkmark-circle" size={52} color={colors.success} />
-              <Text style={{ fontSize: 17, fontWeight: "700", color: colors.success }}>
-                You're all good!
-              </Text>
+              <Text style={{ fontSize: 17, fontWeight: "700", color: colors.success }}>You're all good!</Text>
               <Text style={{ fontSize: 13, color: colors.success, textAlign: "center", paddingHorizontal: 20, opacity: 0.85 }}>
-                No weak, reused, or old passwords found.{"\n"}Keep it up! 🎉
+                No weak, reused, old, or breached passwords found.{"\n"}Keep it up! 🎉
               </Text>
             </View>
           )}
@@ -496,12 +424,7 @@ export default function HealthScreen() {
                   key={issue.key}
                   issue={issue}
                   colors={colors}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/details/[key]",
-                      params: { key: issue.key },
-                    })
-                  }
+                  onPress={() => router.push({ pathname: "/details/[key]", params: { key: issue.key } })}
                 />
               ))}
             </>
@@ -511,17 +434,16 @@ export default function HealthScreen() {
           <View style={[s.card, { marginTop: 8 }]}>
             <Text style={[s.section, { marginBottom: 14 }]}>💡 Security Tips</Text>
             {[
-              { icon: "shuffle-outline" as const,          tip: "Use the built-in password generator for new accounts." },
-              { icon: "lock-closed-outline" as const,       tip: "Aim for 16+ character passwords with symbols." },
-              { icon: "repeat-outline" as const,            tip: "Never reuse a password across different sites." },
-              { icon: "shield-checkmark-outline" as const,  tip: "Enable 2FA on every account that supports it." },
-              { icon: "calendar-outline" as const,          tip: `Update passwords every ${OLD_PASSWORD_DAYS_THRESHOLD} days for high-value accounts.` },
+              { icon: "shuffle-outline"          as const, tip: "Use the built-in password generator for new accounts." },
+              { icon: "lock-closed-outline"       as const, tip: "Aim for 16+ character passwords with symbols." },
+              { icon: "repeat-outline"            as const, tip: "Never reuse a password across different sites." },
+              { icon: "shield-checkmark-outline"  as const, tip: "Enable 2FA on every account that supports it." },
+              { icon: "calendar-outline"          as const, tip: `Update passwords every ${OLD_PASSWORD_DAYS_THRESHOLD} days for high-value accounts.` },
+              { icon: "skull-outline"             as const, tip: "If a password appears in a breach, change it immediately — even if it looks strong." },
             ].map(({ icon, tip }) => (
               <View key={tip} style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
                 <Ionicons name={icon} size={15} color={colors.subText} style={{ marginTop: 1 }} />
-                <Text style={{ flex: 1, fontSize: 13, color: colors.subText, lineHeight: 18 }}>
-                  {tip}
-                </Text>
+                <Text style={{ flex: 1, fontSize: 13, color: colors.subText, lineHeight: 18 }}>{tip}</Text>
               </View>
             ))}
           </View>
